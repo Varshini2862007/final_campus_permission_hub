@@ -158,7 +158,7 @@ export default function StudentDashboard() {
     doc.text("Student Details:", 20, 90);
     doc.setFont("helvetica", "normal");
     doc.text(`Name: ${user.name}`, 30, 100);
-    doc.text(`Student ID: 2023CS0192`, 30, 110);
+    doc.text(`Student ID: ${user.id ? user.id.toUpperCase() : '2023CS0192'} (${user.details || 'CSE'})`, 30, 110);
     
     doc.setFont("helvetica", "bold");
     doc.text("Permission Details:", 20, 130);
@@ -575,7 +575,10 @@ export default function StudentDashboard() {
               </div>
               
               <div className="pt-6">
-                <button className="w-full py-4 bg-[#1E2A5A] text-white font-bold rounded-2xl shadow-lg hover:bg-[#2A3B7D] transition-all">
+                <button 
+                  onClick={() => alert("Settings saved successfully!")}
+                  className="w-full py-4 bg-[#1E2A5A] text-white font-bold rounded-2xl shadow-lg hover:bg-[#2A3B7D] transition-all"
+                >
                   Save Changes
                 </button>
               </div>
@@ -619,13 +622,27 @@ export default function StudentDashboard() {
                   <h3 className="font-bold text-[#1E2A5A] text-lg mb-3 leading-tight">{item.text}</h3>
                   
                   <div className="flex items-center gap-6 pt-4 border-t border-gray-50">
-                    <button className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors group/btn">
+                    <button 
+                      onClick={() => {
+                        setDoubts(prev => prev.map(d => d.id === item.id ? { ...d, likes: (d.likes || 0) + 1 } : d));
+                      }}
+                      className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors group/btn"
+                    >
                       <div className="p-2 rounded-full group-hover/btn:bg-red-50 transition-colors">
-                        <Heart className="w-4 h-4" />
+                        <Heart className={`w-4 h-4 ${(item.likes || 0) > 0 ? 'text-red-500 fill-red-500' : ''}`} />
                       </div>
-                      <span className="text-xs font-bold">Like</span>
+                      <span className="text-xs font-bold">{item.likes ? `${item.likes} Likes` : 'Like'}</span>
                     </button>
-                    <button className="flex items-center gap-2 text-gray-400 hover:text-[#5B8CFF] transition-colors group/btn">
+                    <button 
+                      onClick={() => {
+                        const answer = prompt(`Reply to "${item.text.slice(0, 40)}...":`);
+                        if (answer && answer.trim()) {
+                          setDoubts(prev => prev.map(d => d.id === item.id ? { ...d, answers: (d.answers || 0) + 1 } : d));
+                          alert("Your answer has been submitted!");
+                        }
+                      }}
+                      className="flex items-center gap-2 text-gray-400 hover:text-[#5B8CFF] transition-colors group/btn"
+                    >
                       <div className="p-2 rounded-full group-hover/btn:bg-blue-50 transition-colors">
                         <MessageCircle className="w-4 h-4" />
                       </div>

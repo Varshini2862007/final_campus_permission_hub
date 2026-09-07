@@ -79,8 +79,14 @@
       "id": "an1",
       "title": "CodeFest 2024 Registration Open",
       "type": "Event",
-      "date": "2024-10-20",
-      "author": "Dr. Vikram Singh",
+      "date": "Oct 20, 2024",
+      "authorName": "Dr. Vikram Singh",
+      "targetYears": [
+        "All Years"
+      ],
+      "targetBranches": [
+        "All Branches"
+      ],
       "content": "Make sure to register for CodeFest 2024!"
     }
   ],
@@ -101,7 +107,7 @@
   ],
   "facultyRequests": [
     {
-      "id": "f1",
+      "id": "fac_req_1",
       "name": "Dr. A. Kumar",
       "type": "Lab Equipment Fund",
       "dept": "ECE",
@@ -110,7 +116,7 @@
       "priority": "Medium"
     },
     {
-      "id": "f2",
+      "id": "fac_req_2",
       "name": "Prof. Sharma",
       "type": "Seminar Hall Booking",
       "dept": "CSE",

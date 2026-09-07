@@ -16,8 +16,13 @@ export default function AnnouncementsDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    const userData = localStorage.getItem("user");
+    if (!userData) {
+      router.push("/");
+      return;
+    }
     fetchData();
-  }, []);
+  }, [router]);
 
   const fetchData = async () => {
     const res = await fetch('/api/announcements');
@@ -27,7 +32,7 @@ export default function AnnouncementsDashboard() {
   };
 
   const handleSend = async () => {
-    if (!title || !content) return alert("Please fill in title and content");
+    if (!title.trim() || !content.trim()) return alert("Please fill in title and content");
     
     setIsSubmitting(true);
     const userData = JSON.parse(localStorage.getItem("user") || "{}");
@@ -39,7 +44,7 @@ export default function AnnouncementsDashboard() {
         title,
         content,
         type,
-        author: userData.name || "Admin"
+        authorName: userData.name || "Admin"
       })
     });
     

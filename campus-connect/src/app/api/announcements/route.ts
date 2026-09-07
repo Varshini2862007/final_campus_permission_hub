@@ -8,8 +8,12 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    if (!body.title || !body.content) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
     const newAnnouncement = {
-      id: "an_" + Date.now(),
+      id: "an_" + crypto.randomUUID(),
       ...body,
       date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
     };

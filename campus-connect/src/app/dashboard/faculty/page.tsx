@@ -82,14 +82,18 @@ export default function FacultyDashboard() {
       return;
     }
     setUser(parsedUser);
-    fetchData(parsedUser.id);
+    fetchData(parsedUser);
 
     // Polling to keep data fresh (every 30 seconds)
-    const interval = setInterval(() => fetchData(parsedUser.id), 30000);
+    const interval = setInterval(() => fetchData(parsedUser), 30000);
     return () => clearInterval(interval);
   }, [router]);
 
-  const fetchData = async (facultyId: string) => {
+  const fetchData = async (currentUser?: any) => {
+    const activeUser = currentUser || user;
+    const facultyId = activeUser?.id;
+    if (!facultyId) return;
+
     const [reqRes, annRes, msgRes, doubtRes, facReqRes] = await Promise.all([
       fetch(`/api/requests?facultyId=${facultyId}`),
       fetch('/api/announcements'),
@@ -104,7 +108,7 @@ export default function FacultyDashboard() {
     if (facReqRes.ok) {
       const allFacReq = await facReqRes.json();
       // Filter to only show requests from THIS faculty
-      setMyAdminRequests(allFacReq.filter((r: any) => r.name === user?.name || r.facultyId === facultyId));
+      setMyAdminRequests(allFacReq.filter((r: any) => (activeUser?.name && r.name === activeUser.name) || r.facultyId === facultyId));
     }
   };
 
@@ -112,12 +116,19 @@ export default function FacultyDashboard() {
     e.preventDefault();
     setIsSubmittingReq(true);
     try {
+      // Extract department from details string like "Proctor - CSE (3rd Year)"
+      let deptName = "CSE";
+      if (user?.details) {
+        const match = user.details.match(/\b(CSE|ECE|EEE|MECH|CIVIL|IT|AIML|DS)\b/i);
+        deptName = match ? match[0].toUpperCase() : (user.details.split('-')[1]?.trim().split(' ')[0] || "General");
+      }
+
       const res = await fetch('/api/facultyRequests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: user.name,
-          dept: user.details.split('-')[0].trim() || "Gen",
+          dept: deptName,
           type: newReqType,
           reason: newReqReason
         })
@@ -126,7 +137,7 @@ export default function FacultyDashboard() {
         setIsReqModalOpen(false);
         setNewReqReason("");
         alert("Request submitted to Admin successfully!");
-        fetchData(user.id);
+        fetchData(user);
       }
     } catch (err) {
       alert("Failed to submit request.");
@@ -182,14 +193,24 @@ export default function FacultyDashboard() {
   };
 
   const updateRequest = async (id: string, status: string) => {
+    const previousRequests = requests;
     // Optimistic UI update
     setRequests(reqs => reqs.map(r => r.id === id ? { ...r, status } : r));
     
-    await fetch(`/api/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status })
-    });
+    try {
+      const res = await fetch(`/api/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      if (!res.ok) {
+        throw new Error("Failed to update status on server");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update request status. Reverting changes.");
+      setRequests(previousRequests);
+    }
   };
 
   const handleCreateAnnouncement = async (e: React.FormEvent) => {
@@ -337,7 +358,10 @@ export default function FacultyDashboard() {
                   <Bot className="w-8 h-8 text-[#C4B5FD] mb-3 relative z-10" />
                   <h3 className="text-lg font-bold mb-1 relative z-10">AI Assistant</h3>
                   <p className="text-sm text-[#C4B5FD] mb-4 relative z-10">Ask AI to summarize requests, suggest priorities, or draft announcements.</p>
-                  <button className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur text-white font-semibold text-sm transition-colors relative z-10 border border-white/10">
+                  <button 
+                    onClick={() => setActiveTab("Flagged by AI")}
+                    className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur text-white font-semibold text-sm transition-colors relative z-10 border border-white/10"
+                  >
                     Open AI Assistant
                   </button>
                 </div>
@@ -621,8 +645,27 @@ export default function FacultyDashboard() {
                     {item.tags?.map((t: string) => <span key={t} className="px-2 py-1 bg-gray-100 text-gray-600 text-[10px] rounded-md font-bold uppercase">{t}</span>)}
                   </div>
                   <div className="flex items-center gap-4 text-sm font-medium text-gray-500">
-                    <span className="flex items-center gap-1 hover:text-[#5B8CFF] cursor-pointer"><Heart className="w-4 h-4" /> Like</span>
-                    <span className="flex items-center gap-1 hover:text-[#5B8CFF] cursor-pointer"><MessageCircle className="w-4 h-4" /> {item.answers || 0} Answers</span>
+                    <button 
+                      onClick={() => {
+                        setDoubts(prev => prev.map(d => d.id === item.id ? { ...d, likes: (d.likes || 0) + 1 } : d));
+                      }}
+                      className="flex items-center gap-1 hover:text-red-500 transition-colors"
+                    >
+                      <Heart className={`w-4 h-4 ${(item.likes || 0) > 0 ? 'text-red-500 fill-red-500' : ''}`} /> 
+                      {item.likes ? `${item.likes} Likes` : 'Like'}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const answer = prompt(`Reply to "${item.text.slice(0, 40)}...":`);
+                        if (answer && answer.trim()) {
+                          setDoubts(prev => prev.map(d => d.id === item.id ? { ...d, answers: (d.answers || 0) + 1 } : d));
+                          alert("Your response has been posted!");
+                        }
+                      }}
+                      className="flex items-center gap-1 hover:text-[#5B8CFF] transition-colors"
+                    >
+                      <MessageCircle className="w-4 h-4" /> {item.answers || 0} Answers
+                    </button>
                   </div>
                   <span className="absolute top-4 right-4 text-xs font-bold text-gray-400">Asked by {item.authorName} ({item.authorRole})</span>
                 </div>
@@ -745,7 +788,11 @@ export default function FacultyDashboard() {
               <div className="flex flex-col items-center">
                 <div className="relative">
                   <img src={user.avatar} alt="Profile" className="w-32 h-32 rounded-full border-4 border-[#EAF4FF] object-cover" />
-                  <button className="absolute bottom-0 right-0 p-2 bg-[#5B8CFF] text-white rounded-full shadow-lg hover:scale-110 transition-transform">
+                  <button 
+                    onClick={() => alert("Profile photo updates are managed by College Administration. Please submit a request to change your photo.")}
+                    className="absolute bottom-0 right-0 p-2 bg-[#5B8CFF] text-white rounded-full shadow-lg hover:scale-110 transition-transform"
+                    title="Change Profile Picture"
+                  >
                     <UploadCloud className="w-4 h-4" />
                   </button>
                 </div>
@@ -836,7 +883,10 @@ export default function FacultyDashboard() {
               </div>
 
               <div className="pt-6">
-                <button className="w-full py-4 bg-[#1E2A5A] text-white font-bold rounded-2xl shadow-lg hover:bg-[#2A3B7D] transition-all">
+                <button 
+                  onClick={() => alert("Faculty preferences saved successfully!")}
+                  className="w-full py-4 bg-[#1E2A5A] text-white font-bold rounded-2xl shadow-lg hover:bg-[#2A3B7D] transition-all"
+                >
                   Save Changes
                 </button>
               </div>

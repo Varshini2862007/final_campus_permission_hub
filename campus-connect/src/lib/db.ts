@@ -25,13 +25,20 @@ function writeData(data: any) {
     fs.writeFileSync(dataFilePath, JSON.stringify(data, null, 2));
   } catch (err) {
     // Silently ignore write errors on read-only filesystems (like Vercel)
-    // The data is still updated in the cachedData variable for the current instance session
     console.warn("Filesystem is read-only. Data will only persist in memory for this instance.");
   }
 }
 
-export function getUsers() {
-  return readData().users || [];
+export function sanitizeUser(user: any) {
+  if (!user) return null;
+  const { password, ...safeUser } = user;
+  return safeUser;
+}
+
+export function getUsers(includeSensitive = false) {
+  const users = readData().users || [];
+  if (includeSensitive) return users;
+  return users.map(sanitizeUser);
 }
 
 export function getRequests() {
@@ -97,4 +104,24 @@ export function saveFacultyRequest(request: any) {
   data.facultyRequests.unshift(request);
   writeData(data);
   return request;
+}
+
+export function deleteMessage(id: string) {
+  const data = readData();
+  if (!data.messages) return false;
+  const initialLen = data.messages.length;
+  data.messages = data.messages.filter((m: any) => m.id !== id);
+  if (data.messages.length !== initialLen) {
+    writeData(data);
+    return true;
+  }
+  return false;
+}
+
+export function saveUser(user: any) {
+  const data = readData();
+  if (!data.users) data.users = [];
+  data.users.push(user);
+  writeData(data);
+  return sanitizeUser(user);
 }

@@ -22,12 +22,21 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    if (!body.title || !body.studentId) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    // Heuristic AI priority assessment based on urgency keywords
+    const textToCheck = `${body.title} ${body.reason || ''}`.toLowerCase();
+    const highPriorityKeywords = ['urgent', 'emergency', 'medical', 'hospital', 'immediate', 'today', 'tomorrow', 'hackathon', 'exam'];
+    const isHighPriority = highPriorityKeywords.some(keyword => textToCheck.includes(keyword));
+
     const newRequest = {
-      id: "req_" + Date.now(),
+      id: "req_" + crypto.randomUUID(),
       ...body,
       status: "Pending",
       submittedOn: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      priority: Math.random() > 0.5 ? "High" : "Medium" // Mock AI priority assignment
+      priority: isHighPriority ? "High" : "Medium"
     };
     
     saveRequest(newRequest);

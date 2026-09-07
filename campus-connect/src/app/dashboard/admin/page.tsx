@@ -36,6 +36,16 @@ export default function AdminDashboard() {
   const [newAnnType, setNewAnnType] = useState("Global");
   const [isSubmittingAnn, setIsSubmittingAnn] = useState(false);
 
+  // User Management State
+  const [userSearch, setUserSearch] = useState("");
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserRole, setNewUserRole] = useState("Student");
+  const [newUserDept, setNewUserDept] = useState("");
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
+
   const systemData = [
     { name: 'Mon', usage: 320 },
     { name: 'Tue', usage: 450 },
@@ -92,15 +102,80 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleDeleteDoubt = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this post?")) return;
+    try {
+      const res = await fetch(`/api/messages?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDoubts(prev => prev.filter(d => d.id !== id));
+      } else {
+        alert("Failed to delete the post.");
+      }
+    } catch (err) {
+      alert("Error deleting post.");
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserName || !newUserEmail || !newUserPassword) {
+      alert("Please fill in all required user fields.");
+      return;
+    }
+    setIsSubmittingUser(true);
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newUserName,
+          email: newUserEmail,
+          password: newUserPassword,
+          role: newUserRole,
+          details: newUserDept || `${newUserRole} Member`
+        })
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setUsersList(prev => [...prev, created]);
+        setIsAddUserModalOpen(false);
+        setNewUserName("");
+        setNewUserEmail("");
+        setNewUserPassword("");
+        setNewUserDept("");
+        alert("New user created successfully!");
+      } else {
+        const errData = await res.json();
+        alert(`Error: ${errData.error || "Failed to create user"}`);
+      }
+    } catch (err) {
+      alert("An error occurred while creating the user.");
+    } finally {
+      setIsSubmittingUser(false);
+    }
+  };
+
   const updateRequest = async (id: string, status: string) => {
+    const prevRequests = requests;
+    const prevFacultyRequests = facultyRequests;
     setRequests(reqs => reqs.map(r => r.id === id ? { ...r, status } : r));
     setFacultyRequests(reqs => reqs.map(r => r.id === id ? { ...r, status } : r));
     
-    await fetch(`/api/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status })
-    });
+    try {
+      const res = await fetch(`/api/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      if (!res.ok) {
+        throw new Error("Failed to update status on server");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update request status. Reverting changes.");
+      setRequests(prevRequests);
+      setFacultyRequests(prevFacultyRequests);
+    }
   };
 
   if (!user) return null;
@@ -112,6 +187,8 @@ export default function AdminDashboard() {
   ].sort((a, b) => (b.priority === 'High' ? 1 : -1) - (a.priority === 'High' ? 1 : -1));
 
   const flaggedReq = allPending.filter(r => r.priority === "High");
+  const approvedCount = requests.filter(r => r.status === "Approved").length + facultyRequests.filter(r => r.status === "Approved").length;
+  const rejectedCount = requests.filter(r => r.status === "Rejected").length + facultyRequests.filter(r => r.status === "Rejected").length;
 
   const renderContent = () => {
     switch (activeTab) {
@@ -121,9 +198,9 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
               <StatCard title="Total Students" value={usersList.filter(u => u.role === "Student").length.toString()} icon={Users} color="purple" onClick={() => setActiveTab("Manage Users")} />
               <StatCard title="Total Faculty" value={usersList.filter(u => u.role === "Faculty").length.toString()} icon={UserCog} color="blue" onClick={() => setActiveTab("Manage Users")} />
-              <StatCard title="Global Pending" value={(requests.filter(r => r.status === 'Pending').length + facultyRequests.filter(r => r.status === 'Pending').length).toString()} icon={Clock} color="orange" onClick={() => setActiveTab("All Requests")} />
-              <StatCard title="Approved Today" value="15" icon={Check} color="green" />
-              <StatCard title="Rejected Today" value="3" icon={X} color="red" />
+              <StatCard title="Global Pending" value={allPending.length.toString()} icon={Clock} color="orange" onClick={() => setActiveTab("All Requests")} />
+              <StatCard title="Total Approved" value={approvedCount.toString()} icon={Check} color="green" />
+              <StatCard title="Total Rejected" value={rejectedCount.toString()} icon={X} color="red" />
               <StatCard title="AI Escalated" value={flaggedReq.length.toString()} icon={ShieldAlert} color="red-solid" onClick={() => setActiveTab("Flagged by AI")} />
             </div>
 
@@ -227,7 +304,10 @@ export default function AdminDashboard() {
                   <Bot className="w-8 h-8 text-[#C4B5FD] mb-3 relative z-10" />
                   <h3 className="text-lg font-bold mb-1 relative z-10">Admin AI Bot</h3>
                   <p className="text-sm text-[#C4B5FD] mb-4 relative z-10">Ask AI to generate compliance reports or audit logs instantly.</p>
-                  <button className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur text-white font-semibold text-sm transition-colors relative z-10 border border-white/10">
+                  <button 
+                    onClick={() => setActiveTab("Flagged by AI")}
+                    className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur text-white font-semibold text-sm transition-colors relative z-10 border border-white/10"
+                  >
                     Open AI Dashboard
                   </button>
                 </div>
@@ -237,13 +317,29 @@ export default function AdminDashboard() {
         );
 
       case "Manage Users":
+        const filteredUsers = usersList.filter((u: any) => 
+          u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
+          u.role.toLowerCase().includes(userSearch.toLowerCase()) ||
+          (u.details && u.details.toLowerCase().includes(userSearch.toLowerCase()))
+        );
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
             <h2 className="text-2xl font-bold text-[#1E2A5A] mb-1">Manage Users</h2>
             <p className="text-[#6B7280] text-sm mb-8">View and control access for all students, faculty, and staff.</p>
             <div className="flex gap-4 mb-6">
-              <input type="text" placeholder="Search users by name or ID..." className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]" />
-              <button className="px-6 py-3 bg-[#5B8CFF] text-white rounded-xl font-bold shadow hover:bg-[#4A7BEE]">Add New User</button>
+              <input 
+                type="text" 
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search users by name, role or department..." 
+                className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]" 
+              />
+              <button 
+                onClick={() => setIsAddUserModalOpen(true)}
+                className="px-6 py-3 bg-[#5B8CFF] text-white rounded-xl font-bold shadow hover:bg-[#4A7BEE] transition-colors"
+              >
+                + Add New User
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -251,12 +347,12 @@ export default function AdminDashboard() {
                   <tr className="bg-gray-50/50 border-b border-gray-100">
                     <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">Name</th>
                     <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">Role</th>
-                    <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">Department</th>
+                    <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">Department / Details</th>
                     <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {usersList.map((u: any) => (
+                  {filteredUsers.map((u: any) => (
                     <tr key={u.id} className="border-b border-gray-50 hover:bg-[#F7F8FF] transition-colors">
                       <td className="py-4 px-4 font-semibold text-[#1E2A5A]">{u.name}</td>
                       <td className="py-4 px-4">
@@ -271,6 +367,9 @@ export default function AdminDashboard() {
                       <td className="py-4 px-4"><span className="text-green-500 font-bold text-xs flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500"></div> Active</span></td>
                     </tr>
                   ))}
+                  {filteredUsers.length === 0 && (
+                    <tr><td colSpan={4} className="py-8 text-center text-gray-500 font-medium">No users matched your search.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -474,7 +573,12 @@ export default function AdminDashboard() {
                     <div className="flex gap-2">
                       {item.tags?.map((t: string) => <span key={t} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] rounded font-bold uppercase">{t}</span>)}
                     </div>
-                    <button className="text-xs font-bold text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors border border-red-50">Delete Post</button>
+                    <button 
+                      onClick={() => handleDeleteDoubt(item.id)}
+                      className="text-xs font-bold text-red-500 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-colors border border-red-100"
+                    >
+                      Delete Post
+                    </button>
                   </div>
                   <h3 className="font-bold text-[#1E2A5A] text-lg mb-2">{item.text}</h3>
                   <div className="flex items-center justify-between text-sm text-gray-500 mt-4">
@@ -498,12 +602,12 @@ export default function AdminDashboard() {
               <div className="p-8 border border-gray-100 rounded-[2.5rem] bg-gradient-to-b from-white to-gray-50 flex flex-col items-center justify-center text-center shadow-sm">
                 <Users className="w-12 h-12 text-[#7C6CFF] mb-4" />
                 <h3 className="font-bold text-[#1E2A5A] text-lg">Active Users</h3>
-                <p className="text-4xl font-black text-[#7C6CFF] mt-2 tracking-tight">1,024</p>
+                <p className="text-4xl font-black text-[#7C6CFF] mt-2 tracking-tight">{usersList.length || 3}</p>
               </div>
               <div className="p-8 border border-gray-100 rounded-[2.5rem] bg-gradient-to-b from-white to-gray-50 flex flex-col items-center justify-center text-center shadow-sm">
                 <PieChart className="w-12 h-12 text-[#5B8CFF] mb-4" />
-                <h3 className="font-bold text-[#1E2A5A] text-lg">Server Load</h3>
-                <p className="text-4xl font-black text-[#5B8CFF] mt-2 tracking-tight">14%</p>
+                <h3 className="font-bold text-[#1E2A5A] text-lg">Total Requests</h3>
+                <p className="text-4xl font-black text-[#5B8CFF] mt-2 tracking-tight">{requests.length + facultyRequests.length}</p>
               </div>
               <div className="p-8 border border-gray-100 rounded-[2.5rem] bg-gradient-to-b from-white to-gray-50 flex flex-col items-center justify-center text-center shadow-sm">
                 <TrendingUp className="w-12 h-12 text-green-500 mb-4" />
@@ -623,7 +727,10 @@ export default function AdminDashboard() {
               </div>
 
               <div className="pt-10">
-                <button className="w-full py-4 bg-[#1E2A5A] text-white font-bold rounded-2xl shadow-xl hover:bg-[#2A3B7D] transition-all">
+                <button 
+                  onClick={() => alert("Platform Configuration Saved Successfully!")}
+                  className="w-full py-4 bg-[#1E2A5A] text-white font-bold rounded-2xl shadow-xl hover:bg-[#2A3B7D] transition-all"
+                >
                   Save System Configuration
                 </button>
               </div>
@@ -789,6 +896,64 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+      {/* Add User Modal */}
+      {isAddUserModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-[2rem] p-8 w-full max-w-lg shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-[#1E2A5A]">Add New User</h2>
+              <button onClick={() => setIsAddUserModalOpen(false)} className="p-2 text-gray-400 hover:text-red-500 rounded-full transition-colors"><X className="w-6 h-6" /></button>
+            </div>
+            <p className="text-sm text-[#6B7280] mb-6">Create credentials and profile for a student or faculty member.</p>
+            <form onSubmit={handleCreateUser} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-[#1E2A5A] uppercase tracking-wider block mb-1">Full Name</label>
+                <input 
+                  type="text" required value={newUserName} onChange={e => setNewUserName(e.target.value)}
+                  placeholder="e.g. Jane Doe" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-[#1E2A5A] uppercase tracking-wider block mb-1">Email</label>
+                <input 
+                  type="email" required value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)}
+                  placeholder="e.g. user@college.edu" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-[#1E2A5A] uppercase tracking-wider block mb-1">Password</label>
+                <input 
+                  type="password" required value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)}
+                  placeholder="••••••••" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-[#1E2A5A] uppercase tracking-wider block mb-1">Role</label>
+                  <select 
+                    value={newUserRole} onChange={e => setNewUserRole(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
+                  >
+                    <option value="Student">Student</option>
+                    <option value="Faculty">Faculty</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#1E2A5A] uppercase tracking-wider block mb-1">Department / Info</label>
+                  <input 
+                    type="text" value={newUserDept} onChange={e => setNewUserDept(e.target.value)}
+                    placeholder="e.g. CSE - 2nd Year" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <button type="button" onClick={() => setIsAddUserModalOpen(false)} className="px-6 py-2.5 rounded-xl font-semibold text-gray-500 hover:bg-gray-100">Cancel</button>
+                <button type="submit" disabled={isSubmittingUser} className="px-6 py-2.5 rounded-xl bg-[#5B8CFF] text-white font-bold hover:bg-[#4A7BEE] flex items-center gap-2">
+                  {isSubmittingUser ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save User"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

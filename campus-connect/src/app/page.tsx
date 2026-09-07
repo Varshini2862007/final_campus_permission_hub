@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Bot, Calendar, CheckCircle, GraduationCap, Users, LayoutDashboard, Lock, Mail, ArrowRight, Loader2 } from "lucide-react";
-import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -211,9 +210,13 @@ export default function LoginPage() {
                   <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-[#5B8CFF] focus:ring-[#5B8CFF]" />
                   <span className="text-sm text-[#6B7280]">Remember me</span>
                 </label>
-                <a href="#" className="text-sm font-semibold text-[#5B8CFF] hover:text-[#7C6CFF] transition-colors">
+                <button 
+                  type="button"
+                  onClick={() => alert("Please contact your campus administrator or IT helpdesk to reset your college credentials.")}
+                  className="text-sm font-semibold text-[#5B8CFF] hover:text-[#7C6CFF] transition-colors"
+                >
                   Forgot password?
-                </a>
+                </button>
               </div>
 
               <button 
@@ -234,7 +237,13 @@ export default function LoginPage() {
 
             <div className="mt-8 text-center">
               <p className="text-sm text-[#6B7280]">
-                Don't have an account? <a href="#" className="font-semibold text-[#5B8CFF] hover:text-[#7C6CFF]">Sign up</a>
+                Don't have an account?{" "}
+                <button 
+                  onClick={() => alert("Student and faculty accounts are provisioned by the campus administration. Please contact the admissions or HR desk.")}
+                  className="font-semibold text-[#5B8CFF] hover:text-[#7C6CFF] transition-colors"
+                >
+                  Sign up
+                </button>
               </p>
             </div>
 

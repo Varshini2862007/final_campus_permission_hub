@@ -10,7 +10,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const allUsers = getUsers();
+    const allUsers = getUsers(true);
     const user = allUsers.find(
       (u: any) => u.email === email && u.password === password && u.role === role
     );

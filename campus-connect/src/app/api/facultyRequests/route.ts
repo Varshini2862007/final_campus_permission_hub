@@ -10,12 +10,16 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    if (!body.name || !body.type) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
     const newRequest = {
-      id: "fac_req_" + Date.now(),
+      id: "fac_req_" + crypto.randomUUID(),
       ...body,
       status: "Pending",
       date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      priority: "Medium"
+      priority: body.priority || "Medium"
     };
     
     saveFacultyRequest(newRequest);
