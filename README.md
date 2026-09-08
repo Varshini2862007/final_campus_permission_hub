@@ -3,7 +3,7 @@
 Welcome to the **CampusConnect** repository!
 
 ## 🌍 Live Demo
-**[https://project-space-vert.vercel.app/](https://project-space-vert.vercel.app/)**
+**[https://project-space-vert.vercel.app/](https://project-space-eight.vercel.app/)**
 
 ---
 
