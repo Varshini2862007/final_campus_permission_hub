@@ -4,7 +4,7 @@ import { getFacultyRequests, saveFacultyRequest } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return NextResponse.json(getFacultyRequests());
+  return NextResponse.json(await getFacultyRequests());
 }
 
 export async function POST(request: Request) {
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
       priority: body.priority || "Medium"
     };
     
-    saveFacultyRequest(newRequest);
+    await saveFacultyRequest(newRequest);
     return NextResponse.json(newRequest);
   } catch (err) {
     return NextResponse.json({ error: 'Failed to create faculty request' }, { status: 500 });

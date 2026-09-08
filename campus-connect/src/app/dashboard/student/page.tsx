@@ -9,6 +9,7 @@ import {
   UploadCloud, Send, Download, Search, Heart, MessageCircle, ShieldAlert
 } from "lucide-react";
 import { jsPDF } from "jspdf";
+import ReactMarkdown from "react-markdown";
 
 export default function StudentDashboard() {
   const router = useRouter();
@@ -31,16 +32,21 @@ export default function StudentDashboard() {
   // Settings State
   const [settings, setSettings] = useState({
     emailNotifications: true,
-    pushNotifications: true,
-    darkMode: false
+    pushNotifications: true
   });
+
+  // Search States
+  const [requestSearch, setRequestSearch] = useState("");
+  const [announcementSearch, setAnnouncementSearch] = useState("");
+  const [doubtSearch, setDoubtSearch] = useState("");
+  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
+  const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
   
   // Q&A and Announcements detail states
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<any | null>(null);
   
   // Tab State
   const [activeTab, setActiveTab] = useState("Dashboard");
-
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -61,6 +67,14 @@ export default function StudentDashboard() {
       return;
     }
     setUser(parsedUser);
+
+    const savedSettings = localStorage.getItem("settings_student");
+    if (savedSettings) {
+      try {
+        setSettings(JSON.parse(savedSettings));
+      } catch (e) {}
+    }
+
     fetchData(parsedUser.id);
   }, [router]);
 
@@ -90,21 +104,71 @@ export default function StudentDashboard() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: messageInput,
+        text: messageInput.trim(),
         authorId: user.id,
         authorName: user.name,
         authorRole: user.role,
-        type: activeTab === "Doubts & Q&A" ? 'doubt' : 'message'
+        type: activeTab === "Doubts & Q&A" ? 'doubt' : 'message',
+        likes: 0,
+        likedBy: [],
+        answers: 0,
+        comments: [],
+        tags: ["Academic"]
       })
     });
     if (res.ok) {
       const newMsg = await res.json();
       if (activeTab === "Doubts & Q&A") {
-        setDoubts([newMsg, ...doubts]);
+        setDoubts(prev => [newMsg, ...prev]);
       } else {
-        setMessages([newMsg, ...messages]);
+        setMessages(prev => [newMsg, ...prev]);
       }
       setMessageInput("");
+    }
+  };
+
+  const handleToggleLike = async (id: string) => {
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'toggleLike', userId: user?.id })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setDoubts(prev => prev.map(d => d.id === id ? { ...d, likes: updated.likes, likedBy: updated.likedBy } : d));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddComment = async (id: string, text: string) => {
+    if (!text || !text.trim()) return;
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          action: 'addComment',
+          userId: user?.id,
+          comment: {
+            text: text.trim(),
+            authorId: user?.id,
+            authorName: user?.name,
+            authorRole: user?.role
+          }
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setDoubts(prev => prev.map(d => d.id === id ? { ...d, comments: updated.comments, answers: updated.answers } : d));
+        setReplyInputs(prev => ({ ...prev, [id]: "" }));
+        setExpandedComments(prev => ({ ...prev, [id]: true }));
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -113,6 +177,7 @@ export default function StudentDashboard() {
     if (!aiMessage.trim() || isAiLoading) return;
 
     const userMsg = { role: 'user', content: aiMessage };
+    const currentHistory = [...chatHistory];
     setChatHistory(prev => [...prev, userMsg]);
     setAiMessage("");
     setIsAiLoading(true);
@@ -121,12 +186,16 @@ export default function StudentDashboard() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMsg.content })
+        body: JSON.stringify({ 
+          message: userMsg.content,
+          history: currentHistory,
+          studentId: user?.id
+        })
       });
       const data = await res.json();
-      setChatHistory(prev => [...prev, { role: 'assistant', content: data.response }]);
+      setChatHistory(prev => [...prev, { role: 'assistant', content: data.response || "Sorry, I couldn't generate a response." }]);
     } catch (err) {
-      setChatHistory(prev => [...prev, { role: 'assistant', content: "Sorry, I'm having trouble connecting right now." }]);
+      setChatHistory(prev => [...prev, { role: 'assistant', content: "Sorry, I'm having trouble connecting right now. Please try again." }]);
     } finally {
       setIsAiLoading(false);
     }
@@ -341,16 +410,33 @@ export default function StudentDashboard() {
         );
 
       case "My Permissions":
+        const filteredRequests = requests.filter((req: any) =>
+          req.title?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          req.reason?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          req.status?.toLowerCase().includes(requestSearch.toLowerCase())
+        );
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-[#1E2A5A]">My Permission Requests</h2>
                 <p className="text-[#6B7280] text-sm mt-1">Track the status of all your submitted permissions.</p>
               </div>
-              <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 rounded-xl bg-[#5B8CFF] text-white font-semibold flex items-center gap-2 hover:bg-[#4A7BEE]">
+              <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 rounded-xl bg-[#5B8CFF] text-white font-semibold flex items-center gap-2 hover:bg-[#4A7BEE] self-start">
                 <PlusCircle className="w-4 h-4" /> New Request
               </button>
+            </div>
+
+            <div className="flex items-center gap-3 mb-6 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+              <Search className="w-5 h-5 text-gray-400" />
+              <input 
+                type="text" 
+                value={requestSearch}
+                onChange={(e) => setRequestSearch(e.target.value)}
+                placeholder="Search permissions by event, purpose, reason, or status..." 
+                className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]"
+              />
+              {requestSearch && <button onClick={() => setRequestSearch("")} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>}
             </div>
             
             <div className="overflow-x-auto">
@@ -365,7 +451,7 @@ export default function StudentDashboard() {
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {requests.map((req: any) => (
+                  {filteredRequests.map((req: any) => (
                     <tr key={req.id} className="border-b border-gray-50 hover:bg-[#F7F8FF] transition-colors">
                       <td className="py-4 px-4 font-semibold text-[#1E2A5A]">{req.title}</td>
                       <td className="py-4 px-4 text-[#6B7280] max-w-xs truncate">{req.reason}</td>
@@ -390,8 +476,8 @@ export default function StudentDashboard() {
                       </td>
                     </tr>
                   ))}
-                  {requests.length === 0 && (
-                    <tr><td colSpan={5} className="py-12 text-center text-gray-500">No requests found. Create one!</td></tr>
+                  {filteredRequests.length === 0 && (
+                    <tr><td colSpan={5} className="py-12 text-center text-gray-500">No requests match your search.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -443,13 +529,30 @@ export default function StudentDashboard() {
         );
 
       case "Announcements":
+        const filteredAnnouncements = announcements.filter((a: any) =>
+          a.title?.toLowerCase().includes(announcementSearch.toLowerCase()) ||
+          a.content?.toLowerCase().includes(announcementSearch.toLowerCase()) ||
+          a.type?.toLowerCase().includes(announcementSearch.toLowerCase())
+        );
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
             <h2 className="text-2xl font-bold text-[#1E2A5A] mb-1">Campus Announcements</h2>
-            <p className="text-[#6B7280] text-sm mb-8">Stay updated with the latest college news and events.</p>
+            <p className="text-[#6B7280] text-sm mb-6">Stay updated with the latest college news and events.</p>
             
+            <div className="flex items-center gap-3 mb-6 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+              <Search className="w-5 h-5 text-gray-400" />
+              <input 
+                type="text" 
+                value={announcementSearch}
+                onChange={(e) => setAnnouncementSearch(e.target.value)}
+                placeholder="Search announcements by title, content or category..." 
+                className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]"
+              />
+              {announcementSearch && <button onClick={() => setAnnouncementSearch("")} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>}
+            </div>
+
             <div className="space-y-4">
-              {announcements.map((a:any) => (
+              {filteredAnnouncements.map((a:any) => (
                 <div 
                   key={a.id} 
                   onClick={() => setSelectedAnnouncement(a)}
@@ -472,15 +575,12 @@ export default function StudentDashboard() {
                   </div>
                 </div>
               ))}
-              {announcements.length === 0 && (
-                <div className="py-12 text-center text-gray-500">No announcements yet.</div>
+              {filteredAnnouncements.length === 0 && (
+                <div className="py-12 text-center text-gray-500">No announcements match your search.</div>
               )}
             </div>
           </div>
         );
-
-
-
 
       case "Profile":
         return (
@@ -508,7 +608,7 @@ export default function StudentDashboard() {
                   </div>
                   <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                     <label className="text-xs font-bold text-[#5B8CFF] uppercase tracking-wider block mb-1">Student ID / Roll No</label>
-                    <p className="text-lg font-bold text-[#1E2A5A]">2023CS0192</p>
+                    <p className="text-lg font-bold text-[#1E2A5A]">{user.id}</p>
                   </div>
                 </div>
                 <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-center gap-3">
@@ -521,6 +621,11 @@ export default function StudentDashboard() {
         );
 
       case "Settings":
+        const handleSaveSettings = () => {
+          localStorage.setItem("settings_student", JSON.stringify(settings));
+          alert("Settings saved successfully!");
+        };
+
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh] max-w-4xl mx-auto">
             <h2 className="text-2xl font-bold text-[#1E2A5A] mb-8">Account Settings</h2>
@@ -556,27 +661,9 @@ export default function StudentDashboard() {
                 </div>
               </div>
               
-              <div>
-                <h3 className="text-lg font-bold text-[#1E2A5A] mb-4 flex items-center gap-2"><Settings className="w-5 h-5 text-[#5B8CFF]" /> Preferences</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border border-gray-100 rounded-xl">
-                    <div>
-                      <p className="font-semibold text-[#1E2A5A]">Dark Mode</p>
-                      <p className="text-xs text-gray-500">Switch between light and dark themes.</p>
-                    </div>
-                    <button 
-                      onClick={() => setSettings(prev => ({...prev, darkMode: !prev.darkMode}))}
-                      className={`w-11 h-6 rounded-full relative transition-colors duration-200 ${settings.darkMode ? 'bg-[#5B8CFF]' : 'bg-gray-200'}`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow-sm transition-all duration-200 ${settings.darkMode ? 'right-1' : 'left-1'}`}></div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
               <div className="pt-6">
                 <button 
-                  onClick={() => alert("Settings saved successfully!")}
+                  onClick={handleSaveSettings}
                   className="w-full py-4 bg-[#1E2A5A] text-white font-bold rounded-2xl shadow-lg hover:bg-[#2A3B7D] transition-all"
                 >
                   Save Changes
@@ -587,9 +674,15 @@ export default function StudentDashboard() {
         );
 
       case "Doubts & Q&A":
+        const filteredDoubts = doubts.filter((item: any) =>
+          item.text?.toLowerCase().includes(doubtSearch.toLowerCase()) ||
+          item.authorName?.toLowerCase().includes(doubtSearch.toLowerCase()) ||
+          item.tags?.some((t: string) => t.toLowerCase().includes(doubtSearch.toLowerCase()))
+        );
+
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh] flex flex-col">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-[#1E2A5A]">Campus Q&A Forum</h2>
                 <p className="text-[#6B7280] text-sm mt-1">Ask questions and share knowledge with everyone.</p>
@@ -599,62 +692,116 @@ export default function StudentDashboard() {
               </div>
             </div>
 
+            <div className="flex items-center gap-3 mb-6 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+              <Search className="w-5 h-5 text-gray-400" />
+              <input 
+                type="text" 
+                value={doubtSearch}
+                onChange={(e) => setDoubtSearch(e.target.value)}
+                placeholder="Search doubts by question, author, or tags..." 
+                className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]"
+              />
+              {doubtSearch && <button onClick={() => setDoubtSearch("")} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>}
+            </div>
+
             <div className="flex-1 overflow-y-auto space-y-4 mb-6 pr-2">
-              {doubts.map((item: any) => (
-                <div key={item.id} className="p-6 border border-gray-100 rounded-3xl hover:shadow-lg hover:border-[#5B8CFF]/30 transition-all bg-white relative group">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#F7F8FF] flex items-center justify-center text-[#5B8CFF] font-bold border border-[#EAF4FF]">
-                        {item.authorName?.[0]}
+              {filteredDoubts.map((item: any) => {
+                const commentCount = item.comments?.length || item.answers || 0;
+                const isLiked = item.likedBy?.includes(user?.id) || (item.likes && item.likes > 0);
+                const isExpanded = expandedComments[item.id];
+
+                return (
+                  <div key={item.id} className="p-6 border border-gray-100 rounded-3xl hover:shadow-lg hover:border-[#5B8CFF]/30 transition-all bg-white relative group">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#F7F8FF] flex items-center justify-center text-[#5B8CFF] font-bold border border-[#EAF4FF]">
+                          {item.authorName?.[0]}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-[#1E2A5A]">{item.authorName}</p>
+                          <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{item.authorRole} • {new Date(item.timestamp || Date.now()).toLocaleDateString()}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-bold text-[#1E2A5A]">{item.authorName}</p>
-                        <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{item.authorRole} • {new Date(item.timestamp || Date.now()).toLocaleDateString()}</p>
+                      <div className="flex gap-2">
+                        {item.tags?.map((t: string) => (
+                          <span key={t} className="px-2 py-1 bg-[#EAF4FF] text-[#5B8CFF] text-[9px] font-black rounded-lg uppercase tracking-tighter">{t}</span>
+                        ))}
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      {item.tags?.map((t: string) => (
-                        <span key={t} className="px-2 py-1 bg-[#EAF4FF] text-[#5B8CFF] text-[9px] font-black rounded-lg uppercase tracking-tighter">{t}</span>
-                      ))}
+                    
+                    <h3 className="font-bold text-[#1E2A5A] text-lg mb-3 leading-tight">{item.text}</h3>
+                    
+                    <div className="flex items-center gap-6 pt-4 border-t border-gray-50">
+                      <button 
+                        onClick={() => handleToggleLike(item.id)}
+                        className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors group/btn"
+                      >
+                        <div className="p-2 rounded-full group-hover/btn:bg-red-50 transition-colors">
+                          <Heart className={`w-4 h-4 ${isLiked ? 'text-red-500 fill-red-500' : ''}`} />
+                        </div>
+                        <span className={`text-xs font-bold ${isLiked ? 'text-red-500' : ''}`}>{item.likes || 0} Likes</span>
+                      </button>
+                      <button 
+                        onClick={() => setExpandedComments(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                        className="flex items-center gap-2 text-gray-400 hover:text-[#5B8CFF] transition-colors group/btn"
+                      >
+                        <div className="p-2 rounded-full group-hover/btn:bg-blue-50 transition-colors">
+                          <MessageCircle className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs font-bold">{commentCount} Answers</span>
+                      </button>
                     </div>
-                  </div>
-                  
-                  <h3 className="font-bold text-[#1E2A5A] text-lg mb-3 leading-tight">{item.text}</h3>
-                  
-                  <div className="flex items-center gap-6 pt-4 border-t border-gray-50">
-                    <button 
-                      onClick={() => {
-                        setDoubts(prev => prev.map(d => d.id === item.id ? { ...d, likes: (d.likes || 0) + 1 } : d));
-                      }}
-                      className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors group/btn"
-                    >
-                      <div className="p-2 rounded-full group-hover/btn:bg-red-50 transition-colors">
-                        <Heart className={`w-4 h-4 ${(item.likes || 0) > 0 ? 'text-red-500 fill-red-500' : ''}`} />
+
+                    {/* Expandable Comments / Replies Section */}
+                    {isExpanded && (
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        {item.comments && item.comments.length > 0 ? (
+                          <div className="space-y-3 mb-4 pl-3 border-l-2 border-[#EAF4FF]">
+                            {item.comments.map((c: any) => (
+                              <div key={c.id} className="bg-gray-50/80 p-3.5 rounded-2xl">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-bold text-[#1E2A5A]">{c.authorName} <span className="text-gray-400 text-[10px] font-normal">({c.authorRole})</span></span>
+                                  <span className="text-[10px] text-gray-400">{new Date(c.timestamp || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                                </div>
+                                <p className="text-xs text-gray-700 leading-relaxed">{c.text}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400 mb-3 italic">No replies yet. Be the first to reply!</p>
+                        )}
+
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            value={replyInputs[item.id] || ""}
+                            onChange={(e) => setReplyInputs(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            placeholder="Write an answer or reply..."
+                            className="flex-1 px-4 py-2.5 text-xs bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddComment(item.id, replyInputs[item.id]);
+                              }
+                            }}
+                          />
+                          <button 
+                            type="button" 
+                            onClick={() => handleAddComment(item.id, replyInputs[item.id])}
+                            className="px-5 py-2.5 bg-[#5B8CFF] hover:bg-[#4A7BEE] text-white text-xs font-bold rounded-xl transition-colors"
+                          >
+                            Reply
+                          </button>
+                        </div>
                       </div>
-                      <span className="text-xs font-bold">{item.likes ? `${item.likes} Likes` : 'Like'}</span>
-                    </button>
-                    <button 
-                      onClick={() => {
-                        const answer = prompt(`Reply to "${item.text.slice(0, 40)}...":`);
-                        if (answer && answer.trim()) {
-                          setDoubts(prev => prev.map(d => d.id === item.id ? { ...d, answers: (d.answers || 0) + 1 } : d));
-                          alert("Your answer has been submitted!");
-                        }
-                      }}
-                      className="flex items-center gap-2 text-gray-400 hover:text-[#5B8CFF] transition-colors group/btn"
-                    >
-                      <div className="p-2 rounded-full group-hover/btn:bg-blue-50 transition-colors">
-                        <MessageCircle className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs font-bold">{item.answers || 0} Answers</span>
-                    </button>
+                    )}
                   </div>
-                </div>
-              ))}
-              {doubts.length === 0 && (
+                );
+              })}
+              {filteredDoubts.length === 0 && (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 py-12">
                   <HelpCircle className="w-16 h-16 opacity-10 mb-4" />
-                  <p className="font-bold">No academic doubts yet.</p>
+                  <p className="font-bold">No academic doubts match your query.</p>
                   <p className="text-sm">Be the first to ask a question!</p>
                 </div>
               )}
@@ -721,7 +868,13 @@ export default function StudentDashboard() {
                        {chat.role === 'assistant' && <Bot className="w-3 h-3 text-[#5B8CFF]" />}
                        <span className="text-[10px] font-bold uppercase opacity-60">{chat.role === 'user' ? 'You' : 'Campus AI'}</span>
                      </div>
-                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{chat.content}</p>
+                     {chat.role === 'assistant' ? (
+                       <div className="text-sm leading-relaxed space-y-2 [&>p]:mb-2 [&>p:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>ul]:space-y-1 [&>ol]:space-y-1 [&>blockquote]:border-l-2 [&>blockquote]:border-[#5B8CFF] [&>blockquote]:pl-3 [&>blockquote]:italic [&_strong]:font-bold [&_em]:italic">
+                         <ReactMarkdown>{chat.content}</ReactMarkdown>
+                       </div>
+                     ) : (
+                       <p className="text-sm leading-relaxed whitespace-pre-wrap">{chat.content}</p>
+                     )}
                    </div>
                  </div>
                ))}
@@ -842,10 +995,10 @@ export default function StudentDashboard() {
                   </div>
                   {isDropdownOpen && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-100 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] rounded-xl z-50 max-h-48 overflow-y-auto">
-                      {facultyList.filter(f => f.name.toLowerCase().includes(facultySearch.toLowerCase()) && !selectedFaculty.includes(f.id)).length === 0 ? (
+                      {facultyList.filter(f => (f.name.toLowerCase().includes(facultySearch.toLowerCase()) || (f.details && f.details.toLowerCase().includes(facultySearch.toLowerCase()))) && !selectedFaculty.includes(f.id)).length === 0 ? (
                         <div className="p-4 text-sm text-gray-500 text-center">No faculty found.</div>
                       ) : (
-                        facultyList.filter(f => f.name.toLowerCase().includes(facultySearch.toLowerCase()) && !selectedFaculty.includes(f.id)).map(f => (
+                        facultyList.filter(f => (f.name.toLowerCase().includes(facultySearch.toLowerCase()) || (f.details && f.details.toLowerCase().includes(facultySearch.toLowerCase()))) && !selectedFaculty.includes(f.id)).map(f => (
                           <div 
                             key={f.id} 
                             onClick={() => { setSelectedFaculty(prev => [...prev, f.id]); setFacultySearch(""); setIsDropdownOpen(false); }}

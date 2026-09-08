@@ -27,18 +27,16 @@ export default function FacultyDashboard() {
   // Settings State
   const [settings, setSettings] = useState({
     emailAlerts: true,
-    pushNotifications: true,
-    darkMode: false
+    pushNotifications: true
   });
 
-  const analyticsData = [
-    { name: 'Jan', requests: 45 },
-    { name: 'Feb', requests: 52 },
-    { name: 'Mar', requests: 38 },
-    { name: 'Apr', requests: 65 },
-    { name: 'May', requests: 48 },
-    { name: 'Jun', requests: 59 },
-  ];
+  // Search States
+  const [studentSearch, setStudentSearch] = useState("");
+  const [requestSearch, setRequestSearch] = useState("");
+  const [announcementSearch, setAnnouncementSearch] = useState("");
+  const [doubtSearch, setDoubtSearch] = useState("");
+  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
+  const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
 
   // Create Announcement State
   const [newAnnTitle, setNewAnnTitle] = useState("");
@@ -48,6 +46,15 @@ export default function FacultyDashboard() {
   const [targetBranches, setTargetBranches] = useState<string[]>(["All Branches"]);
   const [newAnnFile, setNewAnnFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const resetAnnouncementForm = () => {
+    setNewAnnTitle("");
+    setNewAnnContent("");
+    setNewAnnType("Important");
+    setTargetYears(["All Years"]);
+    setTargetBranches(["All Branches"]);
+    setNewAnnFile(null);
+  };
 
   // Faculty Request State
   const [isReqModalOpen, setIsReqModalOpen] = useState(false);
@@ -82,6 +89,14 @@ export default function FacultyDashboard() {
       return;
     }
     setUser(parsedUser);
+
+    const savedSettings = localStorage.getItem("settings_faculty");
+    if (savedSettings) {
+      try {
+        setSettings(JSON.parse(savedSettings));
+      } catch (e) {}
+    }
+
     fetchData(parsedUser);
 
     // Polling to keep data fresh (every 30 seconds)
@@ -89,22 +104,29 @@ export default function FacultyDashboard() {
     return () => clearInterval(interval);
   }, [router]);
 
+  const [allStudents, setAllStudents] = useState<any[]>([]);
+
   const fetchData = async (currentUser?: any) => {
     const activeUser = currentUser || user;
     const facultyId = activeUser?.id;
     if (!facultyId) return;
 
-    const [reqRes, annRes, msgRes, doubtRes, facReqRes] = await Promise.all([
+    const [reqRes, annRes, msgRes, doubtRes, facReqRes, usersRes] = await Promise.all([
       fetch(`/api/requests?facultyId=${facultyId}`),
       fetch('/api/announcements'),
       fetch('/api/messages?type=message'),
       fetch('/api/messages?type=doubt'),
-      fetch('/api/facultyRequests')
+      fetch('/api/facultyRequests'),
+      fetch('/api/users')
     ]);
     if (reqRes.ok) setRequests(await reqRes.json());
     if (annRes.ok) setAnnouncements(await annRes.json());
     if (msgRes.ok) setMessages(await msgRes.json());
     if (doubtRes.ok) setDoubts(await doubtRes.json());
+    if (usersRes.ok) {
+      const usersData = await usersRes.json();
+      setAllStudents(usersData.filter((u: any) => u.role === 'Student'));
+    }
     if (facReqRes.ok) {
       const allFacReq = await facReqRes.json();
       // Filter to only show requests from THIS faculty
@@ -176,19 +198,67 @@ export default function FacultyDashboard() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: doubtInput,
+        text: doubtInput.trim(),
         authorId: user.id,
         authorName: user.name,
         authorRole: user.role,
         type: 'doubt',
+        likes: 0,
+        likedBy: [],
         answers: 0,
-        tags: ["General"]
+        comments: [],
+        tags: ["Faculty"]
       })
     });
     if (res.ok) {
       const newDoubt = await res.json();
-      setDoubts([newDoubt, ...doubts]);
+      setDoubts(prev => [newDoubt, ...prev]);
       setDoubtInput("");
+    }
+  };
+
+  const handleToggleLike = async (id: string) => {
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'toggleLike', userId: user?.id })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setDoubts(prev => prev.map(d => d.id === id ? { ...d, likes: updated.likes, likedBy: updated.likedBy } : d));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddComment = async (id: string, text: string) => {
+    if (!text || !text.trim()) return;
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          action: 'addComment',
+          userId: user?.id,
+          comment: {
+            text: text.trim(),
+            authorId: user?.id,
+            authorName: user?.name,
+            authorRole: user?.role
+          }
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setDoubts(prev => prev.map(d => d.id === id ? { ...d, comments: updated.comments, answers: updated.answers } : d));
+        setReplyInputs(prev => ({ ...prev, [id]: "" }));
+        setExpandedComments(prev => ({ ...prev, [id]: true }));
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -232,11 +302,7 @@ export default function FacultyDashboard() {
     if (res.ok) {
       const newAnn = await res.json();
       setAnnouncements([newAnn, ...announcements]);
-      setNewAnnTitle("");
-      setNewAnnContent("");
-      setNewAnnFile(null);
-      setTargetYears(["All Years"]);
-      setTargetBranches(["All Branches"]);
+      resetAnnouncementForm();
       setActiveTab("Announcements");
     }
     setIsSubmitting(false);
@@ -249,13 +315,60 @@ export default function FacultyDashboard() {
   const rejectedReq = requests.filter(r => r.status === "Rejected").length;
   const flaggedReq = requests.filter(r => r.status === "Pending" && r.priority === "High");
 
+  // Helper to extract department and year for section matching
+  const extractDeptAndYear = (details: string = '') => {
+    if (!details) return { dept: '', year: '' };
+    const deptMatch = details.match(/\b(CSE|AIML|IT|DS|ECE|EEE|MECH|CIVIL|AIDS|CSBS)\b/i);
+    const dept = deptMatch ? deptMatch[0].toUpperCase() : '';
+    const yearMatch = details.match(/\b(1st|2nd|3rd|4th|[1-4])\s*(?:year)?\b/i);
+    let year = '';
+    if (yearMatch) {
+      const yStr = yearMatch[1].toLowerCase();
+      if (yStr.startsWith('1')) year = '1st Year';
+      else if (yStr.startsWith('2')) year = '2nd Year';
+      else if (yStr.startsWith('3')) year = '3rd Year';
+      else if (yStr.startsWith('4')) year = '4th Year';
+    }
+    return { dept, year };
+  };
+
+  const facultySection = extractDeptAndYear(user?.details);
+  const myStudents = allStudents.filter(s => {
+    const sInfo = extractDeptAndYear(s.details);
+    const deptMatches = facultySection.dept ? sInfo.dept === facultySection.dept : true;
+    const yearMatches = facultySection.year ? sInfo.year === facultySection.year : true;
+    return deptMatches && yearMatches;
+  });
+
+  // Dynamic Reports & Analytics calculations
+  const totalReq = requests.length;
+  const approvalRate = totalReq > 0 ? Math.round((approvedReq / totalReq) * 100) : 0;
+  
+  const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dynamicMonthlyData = monthLabels.map((m, idx) => {
+    const count = requests.filter(r => {
+      const dateStr = r.submittedOn || r.createdAt || r.date;
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      return !isNaN(d.getTime()) && d.getMonth() === idx;
+    }).length;
+    return { name: m, requests: count };
+  });
+
+  const purposeCounts: Record<string, number> = {};
+  requests.forEach(r => {
+    const title = r.title || "General Request";
+    purposeCounts[title] = (purposeCounts[title] || 0) + 1;
+  });
+  const topPurpose = Object.entries(purposeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "None";
+
   const renderContent = () => {
     switch (activeTab) {
       case "Dashboard":
         return (
           <>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-              <StatCard title="My Students" value="128" icon={Users} color="purple" onClick={() => setActiveTab("My Students")} />
+              <StatCard title="My Students" value={myStudents.length.toString()} icon={Users} color="purple" onClick={() => setActiveTab("My Students")} />
               <StatCard title="Total Requests" value={requests.length.toString()} icon={FileText} color="blue" onClick={() => setActiveTab("Permission Requests")} />
               <StatCard title="Pending" value={pendingReq.toString()} icon={Clock} color="orange" onClick={() => setActiveTab("Permission Requests")} />
               <StatCard title="Approved" value={approvedReq.toString()} icon={Check} color="green" />
@@ -371,37 +484,93 @@ export default function FacultyDashboard() {
         );
       
       case "My Students":
+        const filteredMyStudents = myStudents.filter(s =>
+          s.name?.toLowerCase().includes(studentSearch.toLowerCase()) ||
+          s.id?.toLowerCase().includes(studentSearch.toLowerCase()) ||
+          s.details?.toLowerCase().includes(studentSearch.toLowerCase())
+        );
+
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
-            <h2 className="text-2xl font-bold text-[#1E2A5A] mb-1">My Students</h2>
-            <p className="text-[#6B7280] text-sm mb-8">View and manage the students under your supervision.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[
-                { name: "Rohit Sharma", id: "2023CS0192", course: "B.Tech CSE - 3rd Year", reqs: 3 },
-                { name: "Priya Singh", id: "2023CS0104", course: "B.Tech CSE - 3rd Year", reqs: 1 },
-                { name: "Amit Kumar", id: "2023CS0211", course: "B.Tech IT - 3rd Year", reqs: 0 },
-                { name: "Sneha Reddy", id: "2023CS0145", course: "B.Tech CSE - 3rd Year", reqs: 5 }
-              ].map((s, i) => (
-                <div key={i} className="p-5 border border-gray-100 rounded-2xl hover:shadow-md transition-shadow flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-full bg-[#EAF4FF] text-[#5B8CFF] flex items-center justify-center font-bold text-xl">
-                    {s.name.charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-[#1E2A5A]">{s.name}</h3>
-                    <p className="text-xs text-gray-500">{s.id} • {s.course}</p>
-                    <p className="text-xs font-semibold text-[#5B8CFF] mt-1">{s.reqs} Permission Requests</p>
-                  </div>
-                </div>
-              ))}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-[#1E2A5A] mb-1">My Students</h2>
+                <p className="text-[#6B7280] text-sm">
+                  Students enrolled in your section: <span className="font-semibold text-[#5B8CFF]">{user.details}</span>
+                </p>
+              </div>
+              <div className="px-4 py-2 bg-[#EAF4FF] text-[#5B8CFF] font-bold rounded-xl text-sm self-start">
+                {filteredMyStudents.length} {filteredMyStudents.length === 1 ? 'Student' : 'Students'}
+              </div>
             </div>
+
+            <div className="flex items-center gap-3 mb-6 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+              <Search className="w-5 h-5 text-gray-400" />
+              <input 
+                type="text" 
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                placeholder="Search students by name, ID or branch/year..." 
+                className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]"
+              />
+              {studentSearch && <button onClick={() => setStudentSearch("")} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>}
+            </div>
+
+            {filteredMyStudents.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredMyStudents.map((s) => {
+                  const studentReqs = requests.filter(r => r.studentId === s.id || r.studentName === s.name);
+                  return (
+                    <div key={s.id} className="p-5 border border-gray-100 rounded-2xl hover:shadow-md transition-shadow flex items-center gap-4 bg-white">
+                      <div className="w-14 h-14 rounded-full bg-[#EAF4FF] text-[#5B8CFF] flex items-center justify-center font-bold text-xl uppercase">
+                        {s.name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-[#1E2A5A] truncate">{s.name}</h3>
+                        <p className="text-xs text-gray-500 truncate">{s.id} • {s.details || "Student"}</p>
+                        <p className="text-xs font-semibold text-[#5B8CFF] mt-1">
+                          {studentReqs.length} Permission {studentReqs.length === 1 ? 'Request' : 'Requests'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-16 text-center text-gray-500 border border-dashed border-gray-200 rounded-2xl">
+                <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="font-semibold text-gray-600">No students match your query.</p>
+                <p className="text-xs text-gray-400 mt-1">Check the spelling or try searching another keyword.</p>
+              </div>
+            )}
           </div>
         );
 
       case "Permission Requests":
+        const filteredRequests = requests.filter(r =>
+          r.studentName?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          r.title?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          r.reason?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          r.status?.toLowerCase().includes(requestSearch.toLowerCase())
+        );
+
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
             <h2 className="text-2xl font-bold text-[#1E2A5A] mb-1">All Permission Requests</h2>
-            <p className="text-[#6B7280] text-sm mb-8">Manage all student permission requests.</p>
+            <p className="text-[#6B7280] text-sm mb-6">Manage all student permission requests.</p>
+
+            <div className="flex items-center gap-3 mb-6 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+              <Search className="w-5 h-5 text-gray-400" />
+              <input 
+                type="text" 
+                value={requestSearch}
+                onChange={(e) => setRequestSearch(e.target.value)}
+                placeholder="Search requests by student name, purpose, reason, or status..." 
+                className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]"
+              />
+              {requestSearch && <button onClick={() => setRequestSearch("")} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>}
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -414,7 +583,7 @@ export default function FacultyDashboard() {
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {requests.map(req => (
+                  {filteredRequests.map(req => (
                     <StandardTableRow 
                       key={req.id}
                       student={req.studentName} event={req.title} date={req.submittedOn} 
@@ -423,6 +592,9 @@ export default function FacultyDashboard() {
                       onReject={() => updateRequest(req.id, "Rejected")}
                     />
                   ))}
+                  {filteredRequests.length === 0 && (
+                    <tr><td colSpan={5} className="py-12 text-center text-gray-500">No requests match your search.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -467,19 +639,49 @@ export default function FacultyDashboard() {
         );
 
       case "Announcements":
+        const filteredAnnouncements = announcements.filter((a: any) =>
+          !announcementSearch ||
+          a.title?.toLowerCase().includes(announcementSearch.toLowerCase()) ||
+          a.content?.toLowerCase().includes(announcementSearch.toLowerCase()) ||
+          a.type?.toLowerCase().includes(announcementSearch.toLowerCase())
+        );
+
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-[#1E2A5A]">Previous Announcements</h2>
                 <p className="text-[#6B7280] text-sm mt-1">Review announcements broadcasted to students.</p>
               </div>
-              <button onClick={() => setActiveTab("Create Announcement")} className="px-4 py-2 rounded-xl bg-[#5B8CFF] text-white font-semibold flex items-center gap-2 hover:bg-[#4A7BEE]">
+              <button 
+                onClick={() => {
+                  resetAnnouncementForm();
+                  setActiveTab("Create Announcement");
+                }} 
+                className="px-4 py-2 rounded-xl bg-[#5B8CFF] text-white font-semibold flex items-center gap-2 hover:bg-[#4A7BEE] self-start sm:self-auto"
+              >
                 <PlusCircle className="w-4 h-4" /> Create New
               </button>
             </div>
+
+            <div className="flex items-center gap-3 mb-6 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+              <Search className="w-5 h-5 text-gray-400" />
+              <input 
+                type="text" 
+                value={announcementSearch}
+                onChange={(e) => setAnnouncementSearch(e.target.value)}
+                placeholder="Search announcements by title, type, or content..." 
+                className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]"
+              />
+              {announcementSearch && (
+                <button onClick={() => setAnnouncementSearch("")} className="text-xs text-gray-400 hover:text-gray-600">
+                  Clear
+                </button>
+              )}
+            </div>
+
             <div className="space-y-4">
-              {announcements.map((a:any) => (
+              {filteredAnnouncements.map((a:any) => (
                 <div key={a.id} className="p-5 border border-gray-100 rounded-2xl hover:border-[#5B8CFF]/30 hover:bg-[#F7F8FF] transition-all flex gap-5">
                   <div className="w-12 h-12 rounded-full bg-[#EAF4FF] flex items-center justify-center shrink-0 text-[#5B8CFF]">
                     <Megaphone className="w-6 h-6" />
@@ -498,8 +700,10 @@ export default function FacultyDashboard() {
                   </div>
                 </div>
               ))}
-              {announcements.length === 0 && (
-                <div className="py-12 text-center text-gray-500">No announcements created yet.</div>
+              {filteredAnnouncements.length === 0 && (
+                <div className="py-12 text-center text-gray-500 font-medium">
+                  {announcementSearch ? "No announcements matched your search." : "No announcements created yet."}
+                </div>
               )}
             </div>
           </div>
@@ -604,7 +808,16 @@ export default function FacultyDashboard() {
                 </div>
               </div>
               <div className="flex justify-end gap-4 pt-4 border-t border-gray-100">
-                <button type="button" onClick={() => setActiveTab("Announcements")} className="px-6 py-3 rounded-xl font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200">Cancel</button>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    resetAnnouncementForm();
+                    setActiveTab("Announcements");
+                  }} 
+                  className="px-6 py-3 rounded-xl font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
                 <button type="submit" disabled={isSubmitting} className="px-8 py-3 rounded-xl bg-[#5B8CFF] text-white font-bold hover:bg-[#4A7BEE] flex items-center gap-2">
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Send className="w-4 h-4"/> Broadcast</>}
                 </button>
@@ -615,13 +828,39 @@ export default function FacultyDashboard() {
 
 
       case "Doubts & Q&A":
+        const filteredDoubts = doubts.filter((item: any) =>
+          !doubtSearch ||
+          item.text?.toLowerCase().includes(doubtSearch.toLowerCase()) ||
+          item.authorName?.toLowerCase().includes(doubtSearch.toLowerCase()) ||
+          item.tags?.some((t: string) => t.toLowerCase().includes(doubtSearch.toLowerCase()))
+        );
+
         return (
-          <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
-            <div className="flex items-center justify-between mb-8">
+          <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh] flex flex-col">
+            <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-[#1E2A5A]">Doubts & Q&A Forum</h2>
-                <p className="text-[#6B7280] text-sm mt-1">Answer student queries globally.</p>
+                <p className="text-[#6B7280] text-sm mt-1">Answer student queries and share guidance campus-wide.</p>
               </div>
+              <div className="p-3 bg-[#EDE9FE] rounded-full text-[#7C6CFF]">
+                <HelpCircle className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 mb-6 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+              <Search className="w-5 h-5 text-gray-400" />
+              <input 
+                type="text" 
+                value={doubtSearch}
+                onChange={(e) => setDoubtSearch(e.target.value)}
+                placeholder="Search doubts by query, student name, or tags..." 
+                className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]"
+              />
+              {doubtSearch && (
+                <button onClick={() => setDoubtSearch("")} className="text-xs text-gray-400 hover:text-gray-600">
+                  Clear
+                </button>
+              )}
             </div>
 
             <form onSubmit={handleAskDoubt} className="mb-8 flex gap-3">
@@ -629,7 +868,7 @@ export default function FacultyDashboard() {
                 type="text" 
                 value={doubtInput}
                 onChange={(e) => setDoubtInput(e.target.value)}
-                placeholder="Share knowledge or ask a question..." 
+                placeholder="Share knowledge or answer questions..." 
                 className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]" 
               />
               <button type="submit" className="px-6 py-3 rounded-xl bg-[#7C6CFF] text-white font-semibold flex items-center gap-2 hover:bg-[#6A5AEE]">
@@ -637,41 +876,104 @@ export default function FacultyDashboard() {
               </button>
             </form>
 
-            <div className="space-y-4">
-              {doubts.map((item: any) => (
-                <div key={item.id} className="p-5 border border-gray-100 rounded-2xl hover:shadow-md transition-shadow relative">
-                  <h3 className="font-bold text-[#1E2A5A] text-lg mb-2">{item.text}</h3>
-                  <div className="flex gap-2 mb-4">
-                    {item.tags?.map((t: string) => <span key={t} className="px-2 py-1 bg-gray-100 text-gray-600 text-[10px] rounded-md font-bold uppercase">{t}</span>)}
+            <div className="space-y-4 flex-1">
+              {filteredDoubts.map((item: any) => {
+                const commentCount = item.comments?.length || item.answers || 0;
+                const isLiked = item.likedBy?.includes(user?.id) || (item.likes && item.likes > 0);
+                const isExpanded = expandedComments[item.id];
+
+                return (
+                  <div key={item.id} className="p-6 border border-gray-100 rounded-3xl hover:shadow-lg hover:border-[#5B8CFF]/30 transition-all bg-white relative group">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#F7F8FF] flex items-center justify-center text-[#5B8CFF] font-bold border border-[#EAF4FF]">
+                          {item.authorName?.[0] || 'U'}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-[#1E2A5A]">{item.authorName}</p>
+                          <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{item.authorRole || 'Student'} • {new Date(item.timestamp || Date.now()).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {item.tags?.map((t: string) => (
+                          <span key={t} className="px-2 py-1 bg-[#EAF4FF] text-[#5B8CFF] text-[9px] font-black rounded-lg uppercase tracking-tighter">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <h3 className="font-bold text-[#1E2A5A] text-lg mb-3 leading-tight">{item.text}</h3>
+
+                    <div className="flex items-center gap-6 pt-4 border-t border-gray-50">
+                      <button 
+                        onClick={() => handleToggleLike(item.id)}
+                        className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors group/btn"
+                      >
+                        <div className="p-2 rounded-full group-hover/btn:bg-red-50 transition-colors">
+                          <Heart className={`w-4 h-4 ${isLiked ? 'text-red-500 fill-red-500' : ''}`} />
+                        </div>
+                        <span className={`text-xs font-bold ${isLiked ? 'text-red-500' : ''}`}>{item.likes || 0} Likes</span>
+                      </button>
+                      <button 
+                        onClick={() => setExpandedComments(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                        className="flex items-center gap-2 text-gray-400 hover:text-[#5B8CFF] transition-colors group/btn"
+                      >
+                        <div className="p-2 rounded-full group-hover/btn:bg-blue-50 transition-colors">
+                          <MessageCircle className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs font-bold">{commentCount} Answers</span>
+                      </button>
+                    </div>
+
+                    {/* Expandable Comments / Replies Section */}
+                    {isExpanded && (
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        {item.comments && item.comments.length > 0 ? (
+                          <div className="space-y-3 mb-4 pl-3 border-l-2 border-[#EAF4FF]">
+                            {item.comments.map((c: any) => (
+                              <div key={c.id} className="bg-gray-50/80 p-3.5 rounded-2xl">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-bold text-[#1E2A5A]">
+                                    {c.authorName} <span className="text-gray-400 text-[10px] font-normal">({c.authorRole})</span>
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">{new Date(c.timestamp || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                                </div>
+                                <p className="text-xs text-gray-700 leading-relaxed">{c.text}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400 mb-3 italic">No replies yet. Be the first to reply!</p>
+                        )}
+
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="Write an answer or faculty guidance..." 
+                            value={replyInputs[item.id] || ""}
+                            onChange={(e) => setReplyInputs(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddComment(item.id, replyInputs[item.id]);
+                              }
+                            }}
+                            className="flex-1 px-4 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
+                          />
+                          <button 
+                            type="button"
+                            onClick={() => handleAddComment(item.id, replyInputs[item.id])}
+                            className="px-4 py-2 bg-[#5B8CFF] text-white text-xs font-bold rounded-xl hover:bg-[#4A7BEE] transition-colors"
+                          >
+                            Reply
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-4 text-sm font-medium text-gray-500">
-                    <button 
-                      onClick={() => {
-                        setDoubts(prev => prev.map(d => d.id === item.id ? { ...d, likes: (d.likes || 0) + 1 } : d));
-                      }}
-                      className="flex items-center gap-1 hover:text-red-500 transition-colors"
-                    >
-                      <Heart className={`w-4 h-4 ${(item.likes || 0) > 0 ? 'text-red-500 fill-red-500' : ''}`} /> 
-                      {item.likes ? `${item.likes} Likes` : 'Like'}
-                    </button>
-                    <button 
-                      onClick={() => {
-                        const answer = prompt(`Reply to "${item.text.slice(0, 40)}...":`);
-                        if (answer && answer.trim()) {
-                          setDoubts(prev => prev.map(d => d.id === item.id ? { ...d, answers: (d.answers || 0) + 1 } : d));
-                          alert("Your response has been posted!");
-                        }
-                      }}
-                      className="flex items-center gap-1 hover:text-[#5B8CFF] transition-colors"
-                    >
-                      <MessageCircle className="w-4 h-4" /> {item.answers || 0} Answers
-                    </button>
-                  </div>
-                  <span className="absolute top-4 right-4 text-xs font-bold text-gray-400">Asked by {item.authorName} ({item.authorRole})</span>
-                </div>
-              ))}
-              {doubts.length === 0 && (
-                <p className="text-center py-8 text-gray-500">No doubts posted yet.</p>
+                );
+              })}
+              {filteredDoubts.length === 0 && (
+                <p className="text-center py-8 text-gray-500 font-medium">No doubts posted yet.</p>
               )}
             </div>
           </div>
@@ -733,24 +1035,43 @@ export default function FacultyDashboard() {
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
             <h2 className="text-2xl font-bold text-[#1E2A5A] mb-8 flex items-center gap-2"><BarChart3 /> Reports & Analytics</h2>
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-              <div className="p-6 border border-gray-100 rounded-2xl bg-gray-50 flex flex-col items-center justify-center h-64 text-center">
-                <PieChart className="w-16 h-16 text-[#7C6CFF] mb-4" />
-                <h3 className="font-bold text-[#1E2A5A]">Approval Rate: 85%</h3>
-                <p className="text-sm text-gray-500 mt-2">Most permissions requested are for external hackathons.</p>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+              <div className="p-6 border border-gray-100 rounded-2xl bg-gray-50 flex flex-col items-center justify-center text-center">
+                <PieChart className="w-12 h-12 text-[#7C6CFF] mb-3" />
+                <h3 className="text-2xl font-black text-[#1E2A5A]">Approval Rate: {approvalRate}%</h3>
+                <p className="text-xs text-gray-500 mt-2">
+                  {approvedReq} of {totalReq} requests approved ({pendingReq} pending, {rejectedReq} rejected).
+                </p>
               </div>
-              <div className="p-6 border border-gray-100 rounded-2xl bg-gray-50 flex flex-col items-center justify-center h-64 text-center">
-                <TrendingUp className="w-16 h-16 text-[#5B8CFF] mb-4" />
-                <h3 className="font-bold text-[#1E2A5A]">Activity Spike</h3>
-                <p className="text-sm text-gray-500 mt-2">Permission requests increased by 20% this month.</p>
+              <div className="p-6 border border-gray-100 rounded-2xl bg-gray-50 flex flex-col items-center justify-center text-center">
+                <TrendingUp className="w-12 h-12 text-[#5B8CFF] mb-3" />
+                <h3 className="text-2xl font-black text-[#1E2A5A]">{myStudents.length} Students</h3>
+                <p className="text-xs text-gray-500 mt-2">
+                  Assigned proctor section: <span className="font-semibold text-[#1E2A5A]">{user.details}</span>
+                </p>
+              </div>
+              <div className="p-6 border border-gray-100 rounded-2xl bg-gray-50 flex flex-col items-center justify-center text-center">
+                <ShieldAlert className="w-12 h-12 text-red-500 mb-3" />
+                <h3 className="text-2xl font-black text-[#1E2A5A]">{flaggedReq.length} High Priority</h3>
+                <p className="text-xs text-gray-500 mt-2">
+                  {topPurpose !== "None" ? `Most requested: "${topPurpose}"` : "No pending high-priority items."}
+                </p>
               </div>
             </div>
 
             <div className="p-8 border border-gray-100 rounded-[2rem] bg-white shadow-sm">
-              <h3 className="text-lg font-bold text-[#1E2A5A] mb-6">Monthly Permission Requests</h3>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-bold text-[#1E2A5A]">Monthly Permission Requests</h3>
+                  <p className="text-xs text-[#6B7280]">Actual volume of student permission requests received</p>
+                </div>
+                <span className="text-xs font-bold text-[#5B8CFF] bg-[#EAF4FF] px-3 py-1 rounded-lg">
+                  {totalReq} Total {totalReq === 1 ? 'Request' : 'Requests'}
+                </span>
+              </div>
               <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={analyticsData}>
+                  <BarChart data={dynamicMonthlyData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
                     <XAxis 
                       dataKey="name" 
@@ -763,14 +1084,15 @@ export default function FacultyDashboard() {
                       axisLine={false} 
                       tickLine={false} 
                       tick={{fill: '#9CA3AF', fontSize: 12}} 
+                      allowDecimals={false}
                     />
                     <Tooltip 
                       cursor={{fill: '#F9FAFB'}}
                       contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
                     />
                     <Bar dataKey="requests" radius={[6, 6, 0, 0]}>
-                      {analyticsData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#5B8CFF' : '#7C6CFF'} />
+                      {dynamicMonthlyData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.requests > 0 ? '#5B8CFF' : '#E5E7EB'} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -817,7 +1139,7 @@ export default function FacultyDashboard() {
                   </div>
                   <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                     <label className="text-xs font-bold text-[#5B8CFF] uppercase tracking-wider block mb-1">Employee ID</label>
-                    <p className="text-lg font-bold text-[#1E2A5A]">FAC_2023_081</p>
+                    <p className="text-lg font-bold text-[#1E2A5A]">{user.id || "FAC_2023_081"}</p>
                   </div>
                 </div>
                 <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-center gap-3">
@@ -830,6 +1152,11 @@ export default function FacultyDashboard() {
         );
 
       case "Settings":
+        const handleSaveFacultySettings = () => {
+          localStorage.setItem("settings_faculty", JSON.stringify(settings));
+          alert("Faculty settings saved successfully!");
+        };
+
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh] max-w-4xl mx-auto">
             <h2 className="text-2xl font-bold text-[#1E2A5A] mb-8">Faculty Settings</h2>
@@ -864,27 +1191,9 @@ export default function FacultyDashboard() {
                 </div>
               </div>
 
-              <div>
-                <h3 className="text-lg font-bold text-[#1E2A5A] mb-4 flex items-center gap-2"><Settings className="w-5 h-5 text-[#5B8CFF]" /> Preferences</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border border-gray-100 rounded-xl">
-                    <div>
-                      <p className="font-semibold text-[#1E2A5A]">Dark Mode</p>
-                      <p className="text-xs text-gray-500">Switch between light and dark themes.</p>
-                    </div>
-                    <button 
-                      onClick={() => setSettings(prev => ({...prev, darkMode: !prev.darkMode}))}
-                      className={`w-11 h-6 rounded-full relative transition-colors duration-200 ${settings.darkMode ? 'bg-[#5B8CFF]' : 'bg-gray-200'}`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow-sm transition-all duration-200 ${settings.darkMode ? 'right-1' : 'left-1'}`}></div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               <div className="pt-6">
                 <button 
-                  onClick={() => alert("Faculty preferences saved successfully!")}
+                  onClick={handleSaveFacultySettings}
                   className="w-full py-4 bg-[#1E2A5A] text-white font-bold rounded-2xl shadow-lg hover:bg-[#2A3B7D] transition-all"
                 >
                   Save Changes

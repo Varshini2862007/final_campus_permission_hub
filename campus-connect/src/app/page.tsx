@@ -12,6 +12,12 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  const rolePlaceholders: Record<string, string> = {
+    Student: "student@college.edu",
+    Faculty: "faculty@college.edu",
+    Admin: "admin@college.edu",
+  };
+
   const roles = [
     { name: "Student", icon: GraduationCap },
     { name: "Faculty", icon: Users },
@@ -146,7 +152,9 @@ export default function LoginPage() {
                 return (
                   <button
                     key={r.name}
-                    onClick={() => setRole(r.name)}
+                    onClick={() => {
+                      setRole(r.name);
+                    }}
                     className={`flex flex-col items-center justify-center p-4 rounded-2xl transition-all duration-300 border-2 ${
                       isSelected 
                         ? "border-[#5B8CFF] bg-[#EAF4FF] shadow-[0_0_20px_rgba(91,140,255,0.2)]" 
@@ -172,7 +180,7 @@ export default function LoginPage() {
               )}
 
               <div className="space-y-1">
-                <label className="text-sm font-semibold text-[#1E2A5A] ml-1">Email / College ID</label>
+                <label className="text-sm font-semibold text-[#1E2A5A] ml-1">Email</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                     <Mail className="h-5 w-5 text-gray-400" />
@@ -182,7 +190,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    placeholder="student@college.edu"
+                    placeholder={rolePlaceholders[role] || "student@college.edu"}
                     className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 focus:border-[#5B8CFF] focus:ring-4 focus:ring-[#5B8CFF]/10 transition-all outline-none text-[#1E2A5A] placeholder-gray-400"
                   />
                 </div>
@@ -205,14 +213,10 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-[#5B8CFF] focus:ring-[#5B8CFF]" />
-                  <span className="text-sm text-[#6B7280]">Remember me</span>
-                </label>
+              <div className="flex items-center justify-end pt-1">
                 <button 
                   type="button"
-                  onClick={() => alert("Please contact your campus administrator or IT helpdesk to reset your college credentials.")}
+                  onClick={() => alert("please contact your operator")}
                   className="text-sm font-semibold text-[#5B8CFF] hover:text-[#7C6CFF] transition-colors"
                 >
                   Forgot password?
@@ -234,18 +238,6 @@ export default function LoginPage() {
                 )}
               </button>
             </form>
-
-            <div className="mt-8 text-center">
-              <p className="text-sm text-[#6B7280]">
-                Don't have an account?{" "}
-                <button 
-                  onClick={() => alert("Student and faculty accounts are provisioned by the campus administration. Please contact the admissions or HR desk.")}
-                  className="font-semibold text-[#5B8CFF] hover:text-[#7C6CFF] transition-colors"
-                >
-                  Sign up
-                </button>
-              </p>
-            </div>
 
             {/* Upcoming Opportunities Card */}
             <div className="mt-10 p-4 rounded-2xl bg-gradient-to-br from-[#EAF4FF] to-white border border-[#EAF4FF] shadow-sm flex items-start gap-4">

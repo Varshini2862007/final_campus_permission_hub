@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const studentId = searchParams.get('studentId');
   const facultyId = searchParams.get('facultyId');
   
-  let requests = getRequests();
+  let requests = await getRequests();
   if (studentId) {
     requests = requests.filter((r: any) => r.studentId === studentId);
   }
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       priority: isHighPriority ? "High" : "Medium"
     };
     
-    saveRequest(newRequest);
+    await saveRequest(newRequest);
     return NextResponse.json(newRequest);
   } catch (err) {
     return NextResponse.json({ error: 'Failed to create request' }, { status: 500 });

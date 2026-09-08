@@ -39,6 +39,8 @@ export default function AdminDashboard() {
   // User Management State
   const [userSearch, setUserSearch] = useState("");
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [newUserId, setNewUserId] = useState("");
+  const [newUserAvatar, setNewUserAvatar] = useState("");
   const [newUserName, setNewUserName] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
@@ -46,15 +48,12 @@ export default function AdminDashboard() {
   const [newUserDept, setNewUserDept] = useState("");
   const [isSubmittingUser, setIsSubmittingUser] = useState(false);
 
-  const systemData = [
-    { name: 'Mon', usage: 320 },
-    { name: 'Tue', usage: 450 },
-    { name: 'Wed', usage: 610 },
-    { name: 'Thu', usage: 520 },
-    { name: 'Fri', usage: 480 },
-    { name: 'Sat', usage: 210 },
-    { name: 'Sun', usage: 150 },
-  ];
+  // Search states for other tabs
+  const [requestSearch, setRequestSearch] = useState("");
+  const [announcementSearch, setAnnouncementSearch] = useState("");
+  const [doubtSearch, setDoubtSearch] = useState("");
+
+
 
   useEffect(() => {
     const userData = localStorage.getItem("user");
@@ -68,6 +67,14 @@ export default function AdminDashboard() {
       return;
     }
     setUser(parsedUser);
+
+    const savedSettings = localStorage.getItem("settings_admin");
+    if (savedSettings) {
+      try {
+        setSettings(JSON.parse(savedSettings));
+      } catch (e) {}
+    }
+
     fetchData();
     
     // Polling to keep data fresh (every 30 seconds)
@@ -87,23 +94,11 @@ export default function AdminDashboard() {
     if (facReqRes.ok) setFacultyRequests(await facReqRes.json());
     if (userRes.ok) setUsersList(await userRes.json());
     if (annRes.ok) setAnnouncements(await annRes.json());
-    if (doubtRes.ok) {
-      const data = await doubtRes.json();
-      if (data.length === 0) {
-        // Seed example data
-        setDoubts([
-          { id: 'd1', text: "What is the procedure for semester registration?", authorName: "Rohit Sharma", answers: 2, tags: ["Academic"] },
-          { id: 'd2', text: "Is the central library open on Sundays?", authorName: "Sneha Reddy", answers: 5, tags: ["Campus"] },
-          { id: 'd3', text: "Are there any updates on the Tech Fest dates?", authorName: "Amit Kumar", answers: 0, tags: ["Events"] }
-        ]);
-      } else {
-        setDoubts(data);
-      }
-    }
+    if (doubtRes.ok) setDoubts(await doubtRes.json());
   };
 
   const handleDeleteDoubt = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this post?")) return;
+    if (!confirm("Are_you_sure_you_want_to_delete_this_post?".replace(/_/g, ' '))) return;
     try {
       const res = await fetch(`/api/messages?id=${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -128,11 +123,13 @@ export default function AdminDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: newUserName,
-          email: newUserEmail,
+          id: newUserId.trim() || undefined,
+          avatar: newUserAvatar.trim() || undefined,
+          name: newUserName.trim(),
+          email: newUserEmail.trim(),
           password: newUserPassword,
           role: newUserRole,
-          details: newUserDept || `${newUserRole} Member`
+          details: newUserDept.trim() || `${newUserRole} Member`
         })
       });
       if (res.ok) {
@@ -143,6 +140,8 @@ export default function AdminDashboard() {
         setNewUserEmail("");
         setNewUserPassword("");
         setNewUserDept("");
+        setNewUserId("");
+        setNewUserAvatar("");
         alert("New user created successfully!");
       } else {
         const errData = await res.json();
@@ -318,25 +317,36 @@ export default function AdminDashboard() {
 
       case "Manage Users":
         const filteredUsers = usersList.filter((u: any) => 
-          u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
-          u.role.toLowerCase().includes(userSearch.toLowerCase()) ||
+          !userSearch ||
+          (u.name && u.name.toLowerCase().includes(userSearch.toLowerCase())) || 
+          (u.email && u.email.toLowerCase().includes(userSearch.toLowerCase())) || 
+          (u.id && u.id.toLowerCase().includes(userSearch.toLowerCase())) || 
+          (u.role && u.role.toLowerCase().includes(userSearch.toLowerCase())) ||
           (u.details && u.details.toLowerCase().includes(userSearch.toLowerCase()))
         );
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
             <h2 className="text-2xl font-bold text-[#1E2A5A] mb-1">Manage Users</h2>
-            <p className="text-[#6B7280] text-sm mb-8">View and control access for all students, faculty, and staff.</p>
-            <div className="flex gap-4 mb-6">
-              <input 
-                type="text" 
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                placeholder="Search users by name, role or department..." 
-                className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]" 
-              />
+            <p className="text-[#6B7280] text-sm mb-6">View and control access for all students, faculty, and staff.</p>
+            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+              <div className="flex-1 flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                <Search className="w-5 h-5 text-gray-400" />
+                <input 
+                  type="text" 
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Search users by name, email, ID, role, or department..." 
+                  className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]" 
+                />
+                {userSearch && (
+                  <button onClick={() => setUserSearch("")} className="text-xs text-gray-400 hover:text-gray-600">
+                    Clear
+                  </button>
+                )}
+              </div>
               <button 
                 onClick={() => setIsAddUserModalOpen(true)}
-                className="px-6 py-3 bg-[#5B8CFF] text-white rounded-xl font-bold shadow hover:bg-[#4A7BEE] transition-colors"
+                className="px-6 py-3 bg-[#5B8CFF] text-white rounded-xl font-bold shadow hover:bg-[#4A7BEE] transition-colors whitespace-nowrap self-start sm:self-auto"
               >
                 + Add New User
               </button>
@@ -345,7 +355,8 @@ export default function AdminDashboard() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50/50 border-b border-gray-100">
-                    <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">Name</th>
+                    <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">User</th>
+                    <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">User ID / Roll No</th>
                     <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">Role</th>
                     <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">Department / Details</th>
                     <th className="py-4 px-4 font-semibold text-[#6B7280] text-sm">Status</th>
@@ -354,7 +365,25 @@ export default function AdminDashboard() {
                 <tbody>
                   {filteredUsers.map((u: any) => (
                     <tr key={u.id} className="border-b border-gray-50 hover:bg-[#F7F8FF] transition-colors">
-                      <td className="py-4 px-4 font-semibold text-[#1E2A5A]">{u.name}</td>
+                      <td className="py-4 px-4 font-semibold text-[#1E2A5A]">
+                        <div className="flex items-center gap-3">
+                          <img 
+                            src={u.avatar || `https://i.pravatar.cc/150?u=${encodeURIComponent(u.name)}`} 
+                            alt={u.name} 
+                            className="w-9 h-9 rounded-full object-cover border border-gray-200"
+                            onError={(e: any) => { e.target.src = `https://i.pravatar.cc/150?u=${encodeURIComponent(u.name)}`; }}
+                          />
+                          <div>
+                            <p className="font-bold text-[#1E2A5A] text-sm">{u.name}</p>
+                            <p className="text-xs text-gray-500 font-normal">{u.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className="font-mono text-xs font-semibold px-2.5 py-1 bg-gray-100 rounded-lg text-gray-700">
+                          {u.id}
+                        </span>
+                      </td>
                       <td className="py-4 px-4">
                         <span className={`px-2.5 py-1 text-xs rounded-lg font-bold uppercase tracking-wider ${
                           u.role === 'Student' ? 'bg-purple-100 text-purple-700' : 
@@ -368,7 +397,7 @@ export default function AdminDashboard() {
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={4} className="py-8 text-center text-gray-500 font-medium">No users matched your search.</td></tr>
+                    <tr><td colSpan={5} className="py-8 text-center text-gray-500 font-medium">No users matched your search.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -377,11 +406,41 @@ export default function AdminDashboard() {
         );
 
       case "All Requests":
+        const filteredFacultyReq = facultyRequests.filter(r => 
+          !requestSearch ||
+          r.name?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          r.type?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          r.dept?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          r.status?.toLowerCase().includes(requestSearch.toLowerCase())
+        );
+        const filteredStudentReq = studentRequests.filter(r => 
+          !requestSearch ||
+          r.studentName?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          r.title?.toLowerCase().includes(requestSearch.toLowerCase()) ||
+          r.status?.toLowerCase().includes(requestSearch.toLowerCase())
+        );
+
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
             <h2 className="text-2xl font-bold text-[#1E2A5A] mb-1">Campus Request Logs</h2>
-            <p className="text-[#6B7280] text-sm mb-8">Audit and override any permission requests.</p>
+            <p className="text-[#6B7280] text-sm mb-6">Audit and override any permission requests.</p>
             
+            <div className="flex items-center gap-3 mb-6 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+              <Search className="w-5 h-5 text-gray-400" />
+              <input 
+                type="text" 
+                value={requestSearch}
+                onChange={(e) => setRequestSearch(e.target.value)}
+                placeholder="Search requests by requester name, title/type, department, or status..." 
+                className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]"
+              />
+              {requestSearch && (
+                <button onClick={() => setRequestSearch("")} className="text-xs text-gray-400 hover:text-gray-600">
+                  Clear
+                </button>
+              )}
+            </div>
+
             <h3 className="text-lg font-bold text-[#1E2A5A] mb-4 border-l-4 border-purple-500 pl-3">Faculty Requests</h3>
             <div className="overflow-x-auto mb-10">
               <table className="w-full text-left border-collapse bg-gray-50 rounded-xl overflow-hidden">
@@ -394,7 +453,7 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {facultyRequests.map(r => (
+                  {filteredFacultyReq.map(r => (
                     <StandardTableRow 
                       key={r.id} 
                       name={r.name} type={r.type} date={r.date} dept={r.dept} status={r.status} 
@@ -403,6 +462,9 @@ export default function AdminDashboard() {
                       onReject={(e: any) => { e.stopPropagation(); updateRequest(r.id, "Rejected"); }}
                     />
                   ))}
+                  {filteredFacultyReq.length === 0 && (
+                    <tr><td colSpan={4} className="py-6 text-center text-gray-400 font-medium">No faculty requests found.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -419,7 +481,7 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {studentRequests.map(r => (
+                  {filteredStudentReq.map(r => (
                     <StandardTableRow 
                       key={r.id} 
                       name={r.studentName} type={r.title} date={r.submittedOn} dept="CSE" status={r.status} 
@@ -428,6 +490,9 @@ export default function AdminDashboard() {
                       onReject={(e: any) => { e.stopPropagation(); updateRequest(r.id, "Rejected"); }}
                     />
                   ))}
+                  {filteredStudentReq.length === 0 && (
+                    <tr><td colSpan={4} className="py-6 text-center text-gray-400 font-medium">No student requests found.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -535,112 +600,268 @@ export default function AdminDashboard() {
              </div>
 
              <div>
-               <h3 className="text-xl font-bold text-[#1E2A5A] mb-6">Recent Broadcasts</h3>
-               <div className="space-y-4">
-                 {announcements.map((a:any) => (
-                   <div key={a.id} className="p-5 bg-white border border-gray-100 rounded-2xl flex gap-5">
-                     <div className="w-12 h-12 rounded-full bg-[#EAF4FF] flex items-center justify-center shrink-0 text-[#5B8CFF]">
-                       <Megaphone className="w-6 h-6" />
-                     </div>
-                     <div className="flex-1">
-                       <h4 className="font-bold text-[#1E2A5A]">{a.title}</h4>
-                       <p className="text-sm text-[#6B7280] mt-1">{a.content}</p>
-                       <div className="flex items-center gap-3 mt-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                         <span>{a.date}</span>
-                         <span>•</span>
-                         <span className="text-[#5B8CFF]">{a.type || 'Global'}</span>
-                       </div>
-                     </div>
-                   </div>
-                 ))}
-                 {announcements.length === 0 && <p className="text-center py-8 text-gray-500">No broadcasts found.</p>}
-               </div>
-             </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                  <h3 className="text-xl font-bold text-[#1E2A5A]">Recent Broadcasts</h3>
+                  <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 w-full sm:w-80">
+                    <Search className="w-4 h-4 text-gray-400" />
+                    <input 
+                      type="text" 
+                      value={announcementSearch}
+                      onChange={(e) => setAnnouncementSearch(e.target.value)}
+                      placeholder="Search broadcasts..." 
+                      className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]" 
+                    />
+                    {announcementSearch && (
+                      <button onClick={() => setAnnouncementSearch("")} className="text-xs text-gray-400 hover:text-gray-600">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  {announcements
+                    .filter((a: any) => 
+                      !announcementSearch ||
+                      a.title?.toLowerCase().includes(announcementSearch.toLowerCase()) ||
+                      a.content?.toLowerCase().includes(announcementSearch.toLowerCase()) ||
+                      a.type?.toLowerCase().includes(announcementSearch.toLowerCase())
+                    )
+                    .map((a:any) => (
+                      <div key={a.id} className="p-5 bg-white border border-gray-100 rounded-2xl flex gap-5">
+                        <div className="w-12 h-12 rounded-full bg-[#EAF4FF] flex items-center justify-center shrink-0 text-[#5B8CFF]">
+                          <Megaphone className="w-6 h-6" />
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-bold text-[#1E2A5A]">{a.title}</h4>
+                          <p className="text-sm text-[#6B7280] mt-1">{a.content}</p>
+                          <div className="flex items-center gap-3 mt-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                            <span>{a.date}</span>
+                            <span>•</span>
+                            <span className="text-[#5B8CFF]">{a.type || 'Global'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  {announcements.length === 0 && <p className="text-center py-8 text-gray-500">No broadcasts found.</p>}
+                </div>
+              </div>
           </div>
         );
 
       case "Global Doubts & Q&A":
+        const filteredDoubts = doubts.filter((item: any) =>
+          !doubtSearch ||
+          item.text?.toLowerCase().includes(doubtSearch.toLowerCase()) ||
+          item.authorName?.toLowerCase().includes(doubtSearch.toLowerCase()) ||
+          item.tags?.some((t: string) => t.toLowerCase().includes(doubtSearch.toLowerCase()))
+        );
+
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
             <h2 className="text-2xl font-bold text-[#1E2A5A] mb-1">Global Q&A Moderation</h2>
-            <p className="text-[#6B7280] text-sm mb-8">Review and moderate all campus-wide academic doubts.</p>
+            <p className="text-[#6B7280] text-sm mb-6">Review and moderate all campus-wide academic doubts.</p>
             
+            <div className="flex items-center gap-3 mb-6 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+              <Search className="w-5 h-5 text-gray-400" />
+              <input 
+                type="text" 
+                value={doubtSearch}
+                onChange={(e) => setDoubtSearch(e.target.value)}
+                placeholder="Search forum questions by topic, text, or author..." 
+                className="bg-transparent outline-none flex-1 text-sm text-[#1E2A5A]"
+              />
+              {doubtSearch && (
+                <button onClick={() => setDoubtSearch("")} className="text-xs text-gray-400 hover:text-gray-600">
+                  Clear
+                </button>
+              )}
+            </div>
+
             <div className="space-y-6">
-              {doubts.map((item: any) => (
-                <div key={item.id} className="p-6 border border-gray-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
-                  <div className="absolute top-0 left-0 w-1.5 h-full bg-[#7C6CFF]"></div>
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex gap-2">
-                      {item.tags?.map((t: string) => <span key={t} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] rounded font-bold uppercase">{t}</span>)}
+              {filteredDoubts.map((item: any) => {
+                const commentCount = item.comments?.length || item.answers || 0;
+                return (
+                  <div key={item.id} className="p-6 border border-gray-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-[#7C6CFF]"></div>
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex gap-2">
+                        {item.tags?.map((t: string) => <span key={t} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] rounded font-bold uppercase">{t}</span>)}
+                      </div>
+                      <button 
+                        onClick={() => handleDeleteDoubt(item.id)}
+                        className="text-xs font-bold text-red-500 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-colors border border-red-100"
+                      >
+                        Delete Post
+                      </button>
                     </div>
-                    <button 
-                      onClick={() => handleDeleteDoubt(item.id)}
-                      className="text-xs font-bold text-red-500 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-colors border border-red-100"
-                    >
-                      Delete Post
-                    </button>
-                  </div>
-                  <h3 className="font-bold text-[#1E2A5A] text-lg mb-2">{item.text}</h3>
-                  <div className="flex items-center justify-between text-sm text-gray-500 mt-4">
-                    <div className="flex items-center gap-4">
-                      <span className="flex items-center gap-1"><MessageCircle className="w-4 h-4" /> {item.answers} Answers</span>
+                    <h3 className="font-bold text-[#1E2A5A] text-lg mb-2">{item.text}</h3>
+                    <div className="flex items-center justify-between text-sm text-gray-500 mt-4">
+                      <div className="flex items-center gap-4">
+                        <span className="flex items-center gap-1"><MessageCircle className="w-4 h-4" /> {commentCount} Answers</span>
+                        <span className="flex items-center gap-1"><Heart className="w-4 h-4 text-red-400" /> {item.likes || 0} Likes</span>
+                      </div>
+                      <span className="font-semibold">Asked by {item.authorName}</span>
                     </div>
-                    <span className="font-semibold">Asked by {item.authorName}</span>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+              {filteredDoubts.length === 0 && (
+                <p className="text-center py-8 text-gray-500 font-medium">No doubts matched your search.</p>
+              )}
             </div>
           </div>
         );
 
 
       case "System Analytics":
+        const studentsCount = usersList.filter((u: any) => u.role === 'Student').length;
+        const facultyCount = usersList.filter((u: any) => u.role === 'Faculty').length;
+        const adminCount = usersList.filter((u: any) => u.role === 'Admin').length;
+        const totalRequestsCount = requests.length + facultyRequests.length;
+        const totalAnswersCount = doubts.reduce((acc: number, d: any) => acc + (d.comments?.length || d.answers || 0), 0);
+
+        const requestStatusData = [
+          { name: 'Approved', count: approvedCount, fill: '#10B981' },
+          { name: 'Pending', count: allPending.length, fill: '#F59E0B' },
+          { name: 'Rejected', count: rejectedCount, fill: '#EF4444' },
+          { name: 'AI Flagged', count: flaggedReq.length, fill: '#8B5CF6' }
+        ];
+
+        const userRolesData = [
+          { name: 'Students', count: studentsCount, fill: '#7C6CFF' },
+          { name: 'Faculty', count: facultyCount, fill: '#5B8CFF' },
+          { name: 'Admins', count: adminCount, fill: '#1E2A5A' }
+        ];
+
+        const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const monthlyActivityData = MONTHS.map(month => {
+          const count = [...requests, ...facultyRequests].filter(r => {
+            const dateStr = (r.submittedOn || r.date || "").toLowerCase();
+            return dateStr.includes(month.toLowerCase());
+          }).length;
+          return { name: month, count };
+        });
+
         return (
           <div className="glass-panel bg-white rounded-[2rem] p-8 min-h-[70vh]">
-            <h2 className="text-2xl font-bold text-[#1E2A5A] mb-8 flex items-center gap-3"><Activity className="text-[#5B8CFF] w-7 h-7" /> System Analytics Dashboard</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-              <div className="p-8 border border-gray-100 rounded-[2.5rem] bg-gradient-to-b from-white to-gray-50 flex flex-col items-center justify-center text-center shadow-sm">
-                <Users className="w-12 h-12 text-[#7C6CFF] mb-4" />
-                <h3 className="font-bold text-[#1E2A5A] text-lg">Active Users</h3>
-                <p className="text-4xl font-black text-[#7C6CFF] mt-2 tracking-tight">{usersList.length || 3}</p>
+            <h2 className="text-2xl font-bold text-[#1E2A5A] mb-2 flex items-center gap-3">
+              <Activity className="text-[#5B8CFF] w-7 h-7" /> System Analytics Dashboard
+            </h2>
+            <p className="text-[#6B7280] text-sm mb-8">Live statistics computed from real database records.</p>
+
+            {/* Metric Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+              <div className="p-6 border border-gray-100 rounded-[2rem] bg-gradient-to-b from-white to-gray-50 shadow-sm">
+                <div className="w-12 h-12 rounded-2xl bg-[#EDE9FE] text-[#7C6CFF] flex items-center justify-center mb-4">
+                  <Users className="w-6 h-6" />
+                </div>
+                <p className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Total Registered Users</p>
+                <p className="text-3xl font-black text-[#1E2A5A] mt-1">{usersList.length}</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  {studentsCount} Students • {facultyCount} Faculty • {adminCount} Admins
+                </p>
               </div>
-              <div className="p-8 border border-gray-100 rounded-[2.5rem] bg-gradient-to-b from-white to-gray-50 flex flex-col items-center justify-center text-center shadow-sm">
-                <PieChart className="w-12 h-12 text-[#5B8CFF] mb-4" />
-                <h3 className="font-bold text-[#1E2A5A] text-lg">Total Requests</h3>
-                <p className="text-4xl font-black text-[#5B8CFF] mt-2 tracking-tight">{requests.length + facultyRequests.length}</p>
+
+              <div className="p-6 border border-gray-100 rounded-[2rem] bg-gradient-to-b from-white to-gray-50 shadow-sm">
+                <div className="w-12 h-12 rounded-2xl bg-[#EAF4FF] text-[#5B8CFF] flex items-center justify-center mb-4">
+                  <PieChart className="w-6 h-6" />
+                </div>
+                <p className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Total Permission Requests</p>
+                <p className="text-3xl font-black text-[#1E2A5A] mt-1">{totalRequestsCount}</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  {approvedCount} Approved • {allPending.length} Pending • {rejectedCount} Rejected
+                </p>
               </div>
-              <div className="p-8 border border-gray-100 rounded-[2.5rem] bg-gradient-to-b from-white to-gray-50 flex flex-col items-center justify-center text-center shadow-sm">
-                <TrendingUp className="w-12 h-12 text-green-500 mb-4" />
-                <h3 className="font-bold text-[#1E2A5A] text-lg">Platform Uptime</h3>
-                <p className="text-4xl font-black text-green-500 mt-2 tracking-tight">99.9%</p>
+
+              <div className="p-6 border border-gray-100 rounded-[2rem] bg-gradient-to-b from-white to-gray-50 shadow-sm">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center mb-4">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <p className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">AI Flagged Escalations</p>
+                <p className="text-3xl font-black text-red-600 mt-1">{flaggedReq.length}</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  {flaggedReq.length > 0 ? "High-priority items requiring action" : "No pending high-priority items"}
+                </p>
+              </div>
+
+              <div className="p-6 border border-gray-100 rounded-[2rem] bg-gradient-to-b from-white to-gray-50 shadow-sm">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4">
+                  <Megaphone className="w-6 h-6" />
+                </div>
+                <p className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Campus Communications</p>
+                <p className="text-3xl font-black text-[#1E2A5A] mt-1">{announcements.length}</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  {announcements.length} Announcements • {doubts.length} Doubts ({totalAnswersCount} Replies)
+                </p>
               </div>
             </div>
 
-            <div className="p-8 border border-gray-100 rounded-[2.5rem] bg-white shadow-sm">
-              <h3 className="text-xl font-bold text-[#1E2A5A] mb-8">Daily Traffic Statistics</h3>
-              <div className="h-80 w-full">
+            {/* Real Data Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+              {/* Requests by Status */}
+              <div className="p-8 border border-gray-100 rounded-[2rem] bg-white shadow-sm">
+                <h3 className="text-lg font-bold text-[#1E2A5A] mb-1">Permission Requests Breakdown</h3>
+                <p className="text-xs text-gray-500 mb-6">Real volume of requests categorized by current status</p>
+                <div className="h-72 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={requestStatusData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 12}} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 12}} allowDecimals={false} />
+                      <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}} />
+                      <Bar dataKey="count" radius={[10, 10, 0, 0]}>
+                        {requestStatusData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* User Roles Breakdown */}
+              <div className="p-8 border border-gray-100 rounded-[2rem] bg-white shadow-sm">
+                <h3 className="text-lg font-bold text-[#1E2A5A] mb-1">User Distribution by Role</h3>
+                <p className="text-xs text-gray-500 mb-6">Actual count of registered members in database</p>
+                <div className="h-72 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={userRolesData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 12}} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 12}} allowDecimals={false} />
+                      <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}} />
+                      <Bar dataKey="count" radius={[10, 10, 0, 0]}>
+                        {userRolesData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            {/* Monthly Activity Chart */}
+            <div className="p-8 border border-gray-100 rounded-[2rem] bg-white shadow-sm">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-bold text-[#1E2A5A]">Monthly Campus Request Flow</h3>
+                  <p className="text-xs text-gray-500">Distribution of requests received across the calendar year</p>
+                </div>
+                <span className="text-xs font-bold text-[#5B8CFF] bg-[#EAF4FF] px-3 py-1 rounded-lg">
+                  {totalRequestsCount} Total Requests
+                </span>
+              </div>
+              <div className="h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={systemData}>
+                  <BarChart data={monthlyActivityData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#9CA3AF', fontSize: 12}} 
-                      dy={10}
-                    />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#9CA3AF', fontSize: 12}} 
-                    />
-                    <Tooltip 
-                      cursor={{fill: '#F9FAFB'}}
-                      contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}}
-                    />
-                    <Bar dataKey="usage" radius={[10, 10, 0, 0]}>
-                      {systemData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#5B8CFF' : '#7C6CFF'} />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 12}} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 12}} allowDecimals={false} />
+                    <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}} />
+                    <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+                      {monthlyActivityData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.count > 0 ? '#5B8CFF' : '#E5E7EB'} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -728,7 +949,10 @@ export default function AdminDashboard() {
 
               <div className="pt-10">
                 <button 
-                  onClick={() => alert("Platform Configuration Saved Successfully!")}
+                  onClick={() => {
+                    localStorage.setItem("settings_admin", JSON.stringify(settings));
+                    alert("Platform Configuration Saved Successfully!");
+                  }}
                   className="w-full py-4 bg-[#1E2A5A] text-white font-bold rounded-2xl shadow-xl hover:bg-[#2A3B7D] transition-all"
                 >
                   Save System Configuration
@@ -896,6 +1120,10 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
       {/* Add User Modal */}
       {isAddUserModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -944,6 +1172,22 @@ export default function AdminDashboard() {
                   <input 
                     type="text" value={newUserDept} onChange={e => setNewUserDept(e.target.value)}
                     placeholder="e.g. CSE - 2nd Year" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-[#1E2A5A] uppercase tracking-wider block mb-1">User ID / Roll No (Optional)</label>
+                  <input 
+                    type="text" value={newUserId} onChange={e => setNewUserId(e.target.value)}
+                    placeholder="e.g. 2023CS0192 or FAC_081" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#1E2A5A] uppercase tracking-wider block mb-1">Profile Pic URL / String (Optional)</label>
+                  <input 
+                    type="text" value={newUserAvatar} onChange={e => setNewUserAvatar(e.target.value)}
+                    placeholder="https://... or avatar name" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#5B8CFF]"
                   />
                 </div>
               </div>

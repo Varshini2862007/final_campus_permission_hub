@@ -5,7 +5,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const { id } = await params;
     const body = await request.json();
-    const updated = updateRequestStatus(id, body.status);
+    const updated = await updateRequestStatus(id, body.status);
     
     if (updated) {
       return NextResponse.json(updated);
